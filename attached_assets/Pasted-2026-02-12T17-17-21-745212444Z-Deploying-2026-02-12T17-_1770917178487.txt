@@ -1,0 +1,32 @@
+2026-02-12T17:17:21.745212444Z ==> Deploying...
+2026-02-12T17:17:21.94049335Z ==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance
+2026-02-12T17:18:33.508517796Z ==> Running 'gunicorn main:app'
+2026-02-12T17:18:35.342931428Z ==> No open ports detected, continuing to scan...
+2026-02-12T17:18:35.755060882Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+2026-02-12T17:18:47.397178668Z INFO:httpx:HTTP Request: POST https://api.telegram.org/bot6646918299:AAFM-n4vdki8S4xuvmpTuKE8XS2cqEvpjZM/getMe "HTTP/1.1 200 OK"
+2026-02-12T17:18:47.398087479Z INFO:main:Telegram app initialized successfully
+2026-02-12T17:18:47.398255713Z INFO:telegram.ext.Application:Application started
+2026-02-12T17:18:47.398347555Z INFO:main:Telegram app started successfully
+2026-02-12T17:18:47.415688274Z INFO:main:Database initialized successfully
+2026-02-12T17:18:47.617635637Z INFO:main:Webhook set response: {'ok': True, 'result': True, 'description': 'Webhook is already set'}
+2026-02-12T17:18:47.619679024Z [2026-02-12 17:18:47 +0000] [56] [INFO] Starting gunicorn 25.0.3
+2026-02-12T17:18:47.620116684Z [2026-02-12 17:18:47 +0000] [56] [INFO] Listening at: http://0.0.0.0:10000 (56)
+2026-02-12T17:18:47.620134794Z [2026-02-12 17:18:47 +0000] [56] [INFO] Using worker: sync
+2026-02-12T17:18:47.625868236Z [2026-02-12 17:18:47 +0000] [59] [INFO] Booting worker with pid: 59
+2026-02-12T17:18:47.69779934Z 127.0.0.1 - - [12/Feb/2026:17:18:47 +0000] "HEAD / HTTP/1.1" 200 0 "-" "Go-http-client/1.1"
+2026-02-12T17:18:53.785094311Z ==> Your service is live 🎉
+2026-02-12T17:18:53.916975259Z 127.0.0.1 - - [12/Feb/2026:17:18:53 +0000] "GET / HTTP/1.1" 200 14 "-" "Go-http-client/2.0"
+2026-02-12T17:18:54.027263714Z ==> 
+2026-02-12T17:18:54.029412278Z ==> ///////////////////////////////////////////////////////////
+2026-02-12T17:18:54.031532691Z ==> 
+2026-02-12T17:18:54.03328779Z ==> Available at your primary URL https://rabah-coupons-bot-l587.onrender.com
+2026-02-12T17:18:54.035052691Z ==> 
+2026-02-12T17:18:54.036907916Z ==> ///////////////////////////////////////////////////////////
+2026-02-12T17:20:18.432987689Z 127.0.0.1 - - [12/Feb/2026:17:20:18 +0000] "POST /6646918299:AAFM-n4vdki8S4xuvmpTuKE8XS2cqEvpjZM HTTP/1.1" 200 0 "-" "-"
+2026-02-12T17:20:18.476582591Z 127.0.0.1 - - [12/Feb/2026:17:20:18 +0000] "POST /6646918299:AAFM-n4vdki8S4xuvmpTuKE8XS2cqEvpjZM HTTP/1.1" 200 0 "-" "-"
+2026-02-12T17:20:18.53786379Z 127.0.0.1 - - [12/Feb/2026:17:20:18 +0000] "POST /6646918299:AAFM-n4vdki8S4xuvmpTuKE8XS2cqEvpjZM HTTP/1.1" 200 0 "-" "-"
+2026-02-12T17:21:31.724901883Z [2026-02-12 17:21:31 +0000] [56] [INFO] Handling signal: term
+2026-02-12T17:21:31.725326852Z [2026-02-12 17:21:31 +0000] [59] [INFO] Worker exiting (pid: 59)
+2026-02-12T17:21:33.026938845Z [2026-02-12 17:21:33 +0000] [56] [INFO] Shutting down: Master
+2026-02-12T17:21:33.499493089Z ERROR:asyncio:Task was destroyed but it is pending!
+2026-02-12T17:21:33.499515249Z task: <Task pending name='Application:6646918299:update_fetcher' coro=<Application._update_fetcher() running at /opt/render/project/src/.venv/lib/python3.14/site-packages/telegram/ext/_application.py:1233> wait_for=<Future pending cb=[Task.task_wakeup()]>>

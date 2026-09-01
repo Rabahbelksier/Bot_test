@@ -1,0 +1,18 @@
+services:
+- type: worker
+  name: rabah-coupons-bot
+  runtime: python
+  pythonVersion: "3.11.9"  # هذا هو المهم!
+  buildCommand: |
+    apt-get update && apt-get install -y gcc g++ libxml2-dev libxslt-dev
+    pip install -r requirements.txt
+  startCommand: python main.py
+  envVars:
+    - key: TELEGRAM_TOKEN
+      sync: false
+    - key: APP_KEY
+      sync: false
+    - key: APP_SECRET
+      sync: false
+    - key: TRACKING_ID
+      sync: false
