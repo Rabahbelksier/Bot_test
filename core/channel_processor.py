@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 
-from core.ai import analyze_channel_post
+from core.ai import GeminiRateLimitError, analyze_channel_post
 from core.affiliate import generate_affiliate_link
 from core.db import create_channel_post, update_channel_post
 from config import CHANNEL_TELEGRAM_REPLACEMENT_LINK
@@ -99,6 +99,20 @@ async def process_channel_message(
             content=modified_text,
             processing_status="processed",
             aliexpress_product_id=product_id,
+        )
+        return post_id
+    except GeminiRateLimitError:
+        # A quota response is retryable; keep the source text and let the next
+        # history sync retry it instead of permanently marking it as failed.
+        update_channel_post(
+            post_id,
+            content=text,
+            processing_status="pending",
+        )
+        logger.warning(
+            "Gemini rate limit for channel post %s/%s; queued for retry",
+            channel_id,
+            message_id,
         )
         return post_id
     except Exception:

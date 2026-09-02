@@ -12,7 +12,7 @@ from config import (
     TELEGRAM_API_ID,
     TELEGRAM_SESSION_STRING,
 )
-from core.db import get_telegram_channel_links
+from core.db import get_retryable_channel_posts, get_telegram_channel_links
 from core.channel_processor import process_channel_message
 
 logger = logging.getLogger(__name__)
@@ -137,7 +137,11 @@ class ChannelMonitor:
             "Starting channel history sync: up to %d post(s) per channel",
             CHANNEL_HISTORY_LIMIT,
         )
-        total = 0
+        entities_by_id = {
+            utils.get_peer_id(entity): entity for entity in self.entities
+        }
+        retry_total = await self._retry_failed_posts(entities_by_id)
+        total = retry_total
         for entity in self.entities:
             channel_id = utils.get_peer_id(entity)
             channel_username = getattr(entity, "username", None)
@@ -166,6 +170,48 @@ class ChannelMonitor:
                     examined,
                 )
         logger.info("Channel history sync finished: examined %d post(s)", total)
+
+    async def _retry_failed_posts(self, entities_by_id):
+        """Retry known failed posts without downloading unrelated channel history."""
+        try:
+            retryable_posts = get_retryable_channel_posts()
+        except Exception:
+            logger.exception("Could not load retryable channel posts")
+            return 0
+
+        if not retryable_posts:
+            return 0
+
+        logger.info(
+            "Retrying %d failed/pending channel post(s) from the database",
+            len(retryable_posts),
+        )
+        examined = 0
+        for post in retryable_posts:
+            entity = entities_by_id.get(post["source_channel_id"])
+            if not entity:
+                continue
+            try:
+                message = await self.client.get_messages(
+                    entity,
+                    ids=post["source_message_id"],
+                )
+                if not message:
+                    continue
+                examined += 1
+                await process_channel_message(
+                    message,
+                    channel_id=post["source_channel_id"],
+                    channel_username=getattr(entity, "username", None),
+                )
+            except Exception:
+                logger.exception(
+                    "Retry failed for channel post %s/%s",
+                    post["source_channel_id"],
+                    post["source_message_id"],
+                )
+        logger.info("Retry pass finished: examined %d post(s)", examined)
+        return examined
 
     async def download_photo(self, channel_id, message_id):
         """Download a source photo when no Bot API file_id has been cached yet."""

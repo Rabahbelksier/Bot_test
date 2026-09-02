@@ -109,6 +109,42 @@ def get_telegram_channel_links():
             conn.close()
 
 
+def get_retryable_channel_posts():
+    """Return source identifiers for posts that should be retried."""
+    if not DATABASE_URL:
+        return []
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT source_channel_id, source_message_id
+                FROM statu
+                WHERE source_channel_id IS NOT NULL
+                  AND source_message_id IS NOT NULL
+                  AND (
+                      processing_status IN ('failed', 'pending')
+                      OR (
+                          processing_status = 'processing'
+                          AND created_at < CURRENT_TIMESTAMP - INTERVAL '10 minutes'
+                      )
+                  )
+                ORDER BY id
+                """
+            )
+            return [
+                {
+                    "source_channel_id": row[0],
+                    "source_message_id": row[1],
+                }
+                for row in cursor.fetchall()
+            ]
+    finally:
+        if conn:
+            conn.close()
+
+
 def create_channel_post(
     source_channel_id,
     source_message_id,
@@ -136,7 +172,7 @@ def create_channel_post(
                 VALUES (%s, %s, %s, %s, %s, 'processing')
                 ON CONFLICT (source_channel_id, source_message_id)
                 DO UPDATE SET processing_status = 'processing'
-                WHERE statu.processing_status = 'failed'
+                WHERE statu.processing_status IN ('failed', 'pending')
                 RETURNING id
                 """,
                 (

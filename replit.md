@@ -80,7 +80,7 @@ Telegram bot that generates affiliate links for AliExpress products. Users send 
 - `PORT`: Server port (default 5000)
 - `RENDER_EXTERNAL_URL`: Render external URL for webhook setup
 - `GEMINI_API_KEY`: Gemini API key for channel analysis and natural-language offer search
-- `GEMINI_MODEL`: Optional Gemini model name (default: `gemini-2.5-flash`)
+- `GEMINI_MODEL`: Optional Gemini model name (default: `gemini-flash-latest`)
 - `TELEGRAM_API_ID`: Telegram API ID for the dedicated monitoring account
 - `TELEGRAM_API_HASH`: Telegram API hash for the dedicated monitoring account
 - `TELEGRAM_SESSION_STRING`: Authorized StringSession for the dedicated monitoring account
