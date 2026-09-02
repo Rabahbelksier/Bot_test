@@ -34,6 +34,12 @@ AI_SEARCH_SUPPORTED_TEXT = """هذه الأداة تدعم البحث عن:
 • العروض الرائجة أو المتكررة اليوم"""
 
 
+def _clear_ai_search_state(context):
+    context.user_data.pop("ai_search_active", None)
+    context.user_data.pop("ai_search_results", None)
+    context.user_data.pop("ai_search_index", None)
+
+
 def ask_ai_button():
     return InlineKeyboardButton(
         AI_SEARCH_BUTTON_TEXT,
@@ -154,15 +160,27 @@ async def ask_ai_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text(AI_SEARCH_HELP_TEXT)
 
 
+async def cancel_ai_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    has_ai_state = any(
+        key in context.user_data
+        for key in ("ai_search_active", "ai_search_results", "ai_search_index")
+    )
+    if not has_ai_state:
+        return
+
+    _clear_ai_search_state(context)
+    await update.effective_message.reply_text(
+        "تم إلغاء البحث والعودة إلى الوضع العادي."
+    )
+
+
 async def handle_ai_search_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("ai_search_active"):
         return False
 
     text = (update.effective_message.text or "").strip()
     if text.lower() in {"/cancel", "cancel", "إلغاء"}:
-        context.user_data.pop("ai_search_active", None)
-        context.user_data.pop("ai_search_results", None)
-        context.user_data.pop("ai_search_index", None)
+        _clear_ai_search_state(context)
         await update.effective_message.reply_text("تم إلغاء البحث والعودة إلى الوضع العادي.")
         return True
 
@@ -185,7 +203,14 @@ async def handle_ai_search_message(update: Update, context: ContextTypes.DEFAULT
         await update.effective_message.reply_text(AI_SEARCH_SUPPORTED_TEXT)
         return True
 
-    posts = await asyncio.to_thread(search_channel_posts, intent)
+    try:
+        posts = await asyncio.to_thread(search_channel_posts, intent)
+    except Exception:
+        logger.exception("AI search database query failed")
+        await update.effective_message.reply_text(
+            "تعذر الوصول إلى العروض المحفوظة حاليًا، حاول مرة أخرى لاحقًا."
+        )
+        return True
     if not posts:
         await update.effective_message.reply_text(
             "لم أجد عروضًا محفوظة تطابق طلبك. حاول تغيير اسم المنتج أو نطاق السعر."

@@ -5,7 +5,13 @@ import threading
 import requests
 from flask import Flask, request, Response, jsonify
 from telegram import BotCommand, Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
 
 from config import TOKEN, PORT, RENDER_EXTERNAL_URL
 from core.db import init_db
@@ -21,7 +27,11 @@ from handlers.callbacks import (
     select_coupon,
     smart_cart_callback,
 )
-from handlers.ai_search import ai_next_callback, ask_ai_callback
+from handlers.ai_search import (
+    ai_next_callback,
+    ask_ai_callback,
+    cancel_ai_search_command,
+)
 from core.scraper import get_product_details_scraping
 from services.channel_monitor import ChannelMonitor
 
@@ -37,6 +47,7 @@ telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(CommandHandler("help", help_command))
 telegram_app.add_handler(CommandHandler("coupons", coupons_command))
 telegram_app.add_handler(CommandHandler("admin", admin_command))
+telegram_app.add_handler(CommandHandler("cancel", cancel_ai_search_command))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 telegram_app.add_handler(CallbackQueryHandler(product_details_callback, pattern="^details_"))
 telegram_app.add_handler(CallbackQueryHandler(smart_cart_callback, pattern="^smart_cart_"))

@@ -16,6 +16,10 @@ _GEMINI_URL = (
     "{model}:generateContent"
 )
 _FALLBACK_GEMINI_MODELS = (
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-flash-lite-latest",
+    "gemini-3.6-flash",
     "gemini-3.7-flash",
     "gemini-3.8-flash",
     "gemini-flash-latest",
@@ -103,8 +107,15 @@ def _call_gemini(prompt):
                 )
                 break
             if response.status_code == 429:
+                retry_after = _retry_after_seconds(response)
+                if model != models[-1]:
+                    logger.warning(
+                        "Gemini rate limit reached for model %s; switching to %s",
+                        model,
+                        models[models.index(model) + 1],
+                    )
+                    break
                 if attempt == 0:
-                    retry_after = _retry_after_seconds(response)
                     logger.warning(
                         "Gemini rate limit reached for model %s; retrying in %s second(s)",
                         model,

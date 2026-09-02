@@ -1,7 +1,8 @@
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from core.ai import analyze_channel_post, parse_user_request
+from core.ai import _call_gemini, analyze_channel_post, parse_user_request
 
 
 class AiParsingTests(unittest.TestCase):
@@ -50,6 +51,34 @@ class AiParsingTests(unittest.TestCase):
         result = parse_user_request("من 150 إلى 50")
         self.assertEqual(result["min_price"], 50.0)
         self.assertEqual(result["max_price"], 150.0)
+
+    @patch("core.ai._wait_for_gemini_request_slot")
+    @patch("core.ai.requests.post")
+    @patch("core.ai.GEMINI_MODEL", "gemini-flash-latest")
+    @patch("core.ai.GEMINI_API_KEY", "test-key")
+    def test_switches_model_after_rate_limit(self, post, _wait_for_slot):
+        rate_limited = SimpleNamespace(
+            status_code=429,
+            headers={},
+            ok=False,
+        )
+        successful = SimpleNamespace(
+            status_code=200,
+            headers={},
+            ok=True,
+        )
+        successful.json = lambda: {
+            "candidates": [
+                {"content": {"parts": [{"text": '{"ok": true}'}]}}
+            ]
+        }
+        post.side_effect = [rate_limited, successful]
+
+        self.assertEqual(_call_gemini("أعد JSON فقط"), {"ok": True})
+        self.assertIn(
+            "/models/gemini-3.5-flash-lite:generateContent",
+            post.call_args_list[1].args[0],
+        )
 
 
 if __name__ == "__main__":

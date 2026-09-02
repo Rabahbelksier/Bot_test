@@ -9,3 +9,13 @@ telethon
 qrcode
 qrcode
 telegram
+beautifulsoup4
+cachetools
+flask
+gunicorn
+psycopg2-binary
+python-telegram-bot
+qrcode
+requests
+telegram
+telethon
