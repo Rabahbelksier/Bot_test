@@ -135,7 +135,8 @@ def create_channel_post(
                 )
                 VALUES (%s, %s, %s, %s, %s, 'processing')
                 ON CONFLICT (source_channel_id, source_message_id)
-                DO NOTHING
+                DO UPDATE SET processing_status = 'processing'
+                WHERE statu.processing_status = 'failed'
                 RETURNING id
                 """,
                 (

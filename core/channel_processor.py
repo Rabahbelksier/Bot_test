@@ -102,6 +102,12 @@ async def process_channel_message(
         )
         return post_id
     except Exception:
-        update_channel_post(post_id, processing_status="failed")
+        # Keep the original Telegram text available for diagnosis/retry even
+        # when AI or affiliate-link processing fails.
+        update_channel_post(
+            post_id,
+            content=text,
+            processing_status="failed",
+        )
         logger.exception("Failed to process channel post %s/%s", channel_id, message_id)
         return post_id

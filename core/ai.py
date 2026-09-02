@@ -13,6 +13,7 @@ _GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     "{model}:generateContent"
 )
+_FALLBACK_GEMINI_MODEL = "gemini-2.5-flash"
 _REQUEST_TYPES = {
     "product_best",
     "category_cheapest",
@@ -42,31 +43,43 @@ def _call_gemini(prompt):
     if not GEMINI_API_KEY:
         raise GeminiError("GEMINI_API_KEY is not configured")
 
-    response = requests.post(
-        _GEMINI_URL.format(model=GEMINI_MODEL),
-        params={"key": GEMINI_API_KEY},
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": 0.1,
-                "responseMimeType": "application/json",
+    models = [GEMINI_MODEL]
+    if GEMINI_MODEL != _FALLBACK_GEMINI_MODEL:
+        models.append(_FALLBACK_GEMINI_MODEL)
+
+    for model in models:
+        response = requests.post(
+            _GEMINI_URL.format(model=model),
+            params={"key": GEMINI_API_KEY},
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "responseMimeType": "application/json",
+                },
             },
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    data = response.json()
-    try:
-        text = "".join(
-            part.get("text", "")
-            for part in data["candidates"][0]["content"]["parts"]
+            timeout=30,
         )
-    except (KeyError, IndexError, TypeError) as exc:
-        raise GeminiError("Gemini returned no usable content") from exc
-    result = _parse_json_response(text)
-    if not isinstance(result, dict):
-        raise GeminiError("Gemini returned a JSON value instead of an object")
-    return result
+        if response.status_code == 404 and model != models[-1]:
+            logger.warning(
+                "Gemini model %s is unavailable; retrying with %s",
+                model,
+                _FALLBACK_GEMINI_MODEL,
+            )
+            continue
+        response.raise_for_status()
+        data = response.json()
+        try:
+            text = "".join(
+                part.get("text", "")
+                for part in data["candidates"][0]["content"]["parts"]
+            )
+        except (KeyError, IndexError, TypeError) as exc:
+            raise GeminiError("Gemini returned no usable content") from exc
+        result = _parse_json_response(text)
+        if not isinstance(result, dict):
+            raise GeminiError("Gemini returned a JSON value instead of an object")
+        return result
 
 
 def _coerce_price(value):
