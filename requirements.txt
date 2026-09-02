@@ -6,3 +6,6 @@ gunicorn
 beautifulsoup4
 cachetools
 telethon
+qrcode
+qrcode
+telegram
