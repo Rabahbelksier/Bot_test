@@ -166,4 +166,5 @@ init_db()
 set_webhook()
 
 if __name__ == '__main__':
+    _ensure_ready()
     app.run(host='0.0.0.0', port=PORT)

@@ -37,16 +37,31 @@ class ChannelMonitor:
             )
             return False
 
+        try:
+            session = StringSession(TELEGRAM_SESSION_STRING)
+        except ValueError:
+            logger.error(
+                "Channel monitor is disabled: TELEGRAM_SESSION_STRING is not a "
+                "valid Telethon StringSession; run scripts/create_telegram_session.py"
+            )
+            return False
+
         self.client = TelegramClient(
-            StringSession(TELEGRAM_SESSION_STRING),
+            session,
             TELEGRAM_API_ID,
             TELEGRAM_API_HASH,
         )
-        await self.client.connect()
-        if not await self.client.is_user_authorized():
-            logger.error(
-                "Channel monitor is disabled: the Telegram user session is unauthorized"
-            )
+        try:
+            await self.client.connect()
+            if not await self.client.is_user_authorized():
+                logger.error(
+                    "Channel monitor is disabled: the Telegram user session is unauthorized"
+                )
+                await self.client.disconnect()
+                self.client = None
+                return False
+        except Exception:
+            logger.exception("Channel monitor could not connect to Telegram")
             await self.client.disconnect()
             self.client = None
             return False

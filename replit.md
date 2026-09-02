@@ -121,3 +121,7 @@ Telegram bot that generates affiliate links for AliExpress products. Users send 
 - With MTProto monitoring, the source account's media identifier is not a Bot API
   `file_id`. The monitor downloads a photo on first user delivery; the bot then caches
   the returned Bot API `photo_file_id` in `statu` for later deliveries.
+- If `TELEGRAM_SESSION_STRING` is not available yet, run
+  `python scripts/create_telegram_session.py` after setting `TELEGRAM_API_ID` and
+  `TELEGRAM_API_HASH`; complete the one-time Telegram login, then copy the generated
+  file contents into the secret and delete the local file.

@@ -1,4 +1,5 @@
 .telegram_session
+.telegram_session_string
 *.session
 *.session-journal
 __pycache__/
