@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 from urllib.parse import urlparse
@@ -12,10 +13,16 @@ from config import (
     TELEGRAM_API_ID,
     TELEGRAM_SESSION_STRING,
 )
-from core.db import get_retryable_channel_posts, get_telegram_channel_links
+from core.db import (
+    delete_expired_channel_posts,
+    get_retryable_channel_posts,
+    get_telegram_channel_links,
+)
 from core.channel_processor import process_channel_message
 
 logger = logging.getLogger(__name__)
+
+CLEANUP_INTERVAL_SECONDS = 60 * 60
 
 
 class ChannelMonitor:
@@ -25,6 +32,7 @@ class ChannelMonitor:
         self.client = None
         self.task = None
         self.history_task = None
+        self.cleanup_task = None
         self.entities = []
 
     @property
@@ -36,6 +44,9 @@ class ChannelMonitor:
         )
 
     async def start(self):
+        if not self.cleanup_task or self.cleanup_task.done():
+            self.cleanup_task = asyncio.create_task(self._cleanup_loop())
+
         if not self.configured:
             missing = [
                 name
@@ -116,6 +127,19 @@ class ChannelMonitor:
             )
         logger.info("Channel monitor started for %d channel(s)", len(self.entities))
         return True
+
+    async def _cleanup_loop(self):
+        while True:
+            try:
+                deleted_rows = await asyncio.to_thread(delete_expired_channel_posts)
+                if deleted_rows:
+                    logger.info(
+                        "Deleted %d channel post(s) older than three days",
+                        deleted_rows,
+                    )
+            except Exception:
+                logger.exception("Channel post cleanup failed")
+            await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
 
     async def _handle_new_message(self, event):
         message = event.message
@@ -217,6 +241,10 @@ class ChannelMonitor:
         """Download a source photo when no Bot API file_id has been cached yet."""
         if not self.client:
             return None
+        if not self.client.is_connected():
+            await self.client.connect()
+            if not await self.client.is_user_authorized():
+                return None
         source_message = await self.client.get_messages(
             channel_id,
             ids=message_id,
@@ -229,6 +257,13 @@ class ChannelMonitor:
         return buffer
 
     async def stop(self):
+        if self.cleanup_task:
+            self.cleanup_task.cancel()
+            try:
+                await self.cleanup_task
+            except asyncio.CancelledError:
+                pass
+            self.cleanup_task = None
         if self.client:
             await self.client.disconnect()
             self.client = None

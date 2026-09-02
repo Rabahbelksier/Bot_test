@@ -1,7 +1,15 @@
 import asyncio
 import logging
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputFile,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    Update,
+)
 from telegram.ext import ContextTypes
 
 from core.ai import GeminiError, parse_user_request
@@ -10,6 +18,7 @@ from core.db import (
     save_channel_photo_file_id,
     search_channel_posts,
 )
+from utils.parser import extract_aliexpress_url
 from utils.telegram import remove_pressed_button
 
 logger = logging.getLogger(__name__)
@@ -23,7 +32,7 @@ AI_SEARCH_HELP_TEXT = """يمكنك أن تطلب مني البحث في الع�
 • أرخص عرض لمنتج محدد
 • العروض الرائجة اليوم
 
-اكتب طلبك الآن، أو أرسل /cancel للعودة إلى البحث العادي."""
+اكتب طلبك الآن. يبقى وضع الذكاء الاصطناعي فعالاً حتى ترسل رابط AliExpress."""
 
 AI_SEARCH_SUPPORTED_TEXT = """هذه الأداة تدعم البحث عن:
 • أفضل عرض على منتج معين
@@ -45,6 +54,41 @@ def ask_ai_button():
         AI_SEARCH_BUTTON_TEXT,
         callback_data="ask_ai",
     )
+
+
+def ai_search_reply_keyboard():
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton(AI_SEARCH_BUTTON_TEXT)]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+async def _activate_ai_search(message, context):
+    _clear_ai_search_state(context)
+    context.user_data["ai_search_active"] = True
+    await message.reply_text(
+        AI_SEARCH_HELP_TEXT,
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+async def _restore_ai_search_keyboard(message):
+    await message.reply_text(
+        "يمكنك بدء بحث جديد من الزر الموجود أسفل خانة الكتابة.",
+        reply_markup=ai_search_reply_keyboard(),
+    )
+
+
+async def _cache_photo_file_id(post_id, photo_file_id):
+    try:
+        await asyncio.to_thread(
+            save_channel_photo_file_id,
+            post_id,
+            photo_file_id,
+        )
+    except Exception:
+        logger.exception("Could not cache photo file_id for post %s", post_id)
 
 
 def _next_keyboard(has_next):
@@ -76,10 +120,14 @@ async def _download_source_photo(post, context):
     monitor = context.application.bot_data.get("channel_monitor")
     if not monitor:
         return None
-    return await monitor.download_photo(
-        post["source_channel_id"],
-        post["source_message_id"],
-    )
+    try:
+        return await monitor.download_photo(
+            post["source_channel_id"],
+            post["source_message_id"],
+        )
+    except Exception:
+        logger.exception("Could not download source photo for post %s", post.get("id"))
+        return None
 
 
 async def send_stored_post(chat_id, context, post, has_next=False):
@@ -97,21 +145,22 @@ async def send_stored_post(chat_id, context, post, has_next=False):
 
     if photo:
         try:
+            photo_to_send = (
+                InputFile(photo, filename=f"channel-post-{post.get('id', 'image')}.jpg")
+                if downloaded_source
+                else photo
+            )
             caption = content if len(content) <= 1024 else "📦"
             sent = await bot.send_photo(
                 chat_id=chat_id,
-                photo=photo,
+                photo=photo_to_send,
                 caption=caption,
                 reply_markup=_next_keyboard(has_next) if len(content) <= 1024 else None,
             )
             if sent.photo:
                 file_id = sent.photo[-1].file_id
                 if downloaded_source or not post.get("photo_file_id"):
-                    await asyncio.to_thread(
-                        save_channel_photo_file_id,
-                        post["id"],
-                        file_id,
-                    )
+                    await _cache_photo_file_id(post["id"], file_id)
             if len(content) > 1024:
                 await _send_text_post(bot, chat_id, content, has_next)
             return sent
@@ -132,8 +181,7 @@ async def send_stored_post(chat_id, context, post, has_next=False):
                             ),
                         )
                         if sent.photo:
-                            await asyncio.to_thread(
-                                save_channel_photo_file_id,
+                            await _cache_photo_file_id(
                                 post["id"],
                                 sent.photo[-1].file_id,
                             )
@@ -154,24 +202,19 @@ async def ask_ai_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await remove_pressed_button(query)
-    context.user_data["ai_search_active"] = True
-    context.user_data.pop("ai_search_results", None)
-    context.user_data.pop("ai_search_index", None)
-    await query.message.reply_text(AI_SEARCH_HELP_TEXT)
+    await _activate_ai_search(query.message, context)
 
 
-async def cancel_ai_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    has_ai_state = any(
-        key in context.user_data
-        for key in ("ai_search_active", "ai_search_results", "ai_search_index")
-    )
-    if not has_ai_state:
-        return
+async def handle_ai_search_button_message(update, context):
+    if context.user_data.get("ai_search_active"):
+        return False
 
-    _clear_ai_search_state(context)
-    await update.effective_message.reply_text(
-        "تم إلغاء البحث والعودة إلى الوضع العادي."
-    )
+    text = (update.effective_message.text or "").strip()
+    if text != AI_SEARCH_BUTTON_TEXT:
+        return False
+
+    await _activate_ai_search(update.effective_message, context)
+    return True
 
 
 async def handle_ai_search_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -179,10 +222,10 @@ async def handle_ai_search_message(update: Update, context: ContextTypes.DEFAULT
         return False
 
     text = (update.effective_message.text or "").strip()
-    if text.lower() in {"/cancel", "cancel", "إلغاء"}:
+    if extract_aliexpress_url(text):
         _clear_ai_search_state(context)
-        await update.effective_message.reply_text("تم إلغاء البحث والعودة إلى الوضع العادي.")
-        return True
+        await _restore_ai_search_keyboard(update.effective_message)
+        return False
 
     try:
         intent = await asyncio.to_thread(parse_user_request, text)
@@ -219,7 +262,6 @@ async def handle_ai_search_message(update: Update, context: ContextTypes.DEFAULT
 
     context.user_data["ai_search_results"] = [post["id"] for post in posts]
     context.user_data["ai_search_index"] = 0
-    context.user_data["ai_search_active"] = False
     await send_stored_post(
         update.effective_chat.id,
         context,

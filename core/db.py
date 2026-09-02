@@ -4,6 +4,28 @@ from config import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
+_PRODUCT_REQUEST_TYPES = {
+    "product_best",
+    "product_cheapest",
+    "product_price_range",
+}
+_GENERIC_PRODUCT_KEYWORDS = {
+    "product",
+    "products",
+    "phone",
+    "phones",
+    "smartphone",
+    "smartphones",
+    "هاتف",
+    "هواتف",
+    "جوال",
+    "جوالات",
+    "موبايل",
+    "موبايلات",
+    "منتج",
+    "منتجات",
+}
+
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -257,11 +279,22 @@ def search_channel_posts(intent, limit=10):
     if not DATABASE_URL:
         return []
 
+    request_type = intent.get("request_type")
     keywords = [
         str(keyword).strip()
         for keyword in intent.get("keywords", [])
         if str(keyword).strip()
     ][:6]
+    if request_type in _PRODUCT_REQUEST_TYPES:
+        specific_keywords = [
+            keyword
+            for keyword in keywords
+            if keyword.casefold() not in _GENERIC_PRODUCT_KEYWORDS
+        ]
+        keywords = specific_keywords or keywords
+        if not keywords:
+            return []
+
     conditions = ["processing_status = 'processed'"]
     params = []
 
@@ -269,8 +302,12 @@ def search_channel_posts(intent, limit=10):
         keyword_clauses = []
         for keyword in keywords:
             pattern = f"%{keyword}%"
-            keyword_clauses.append("(title ILIKE %s OR content ILIKE %s)")
-            params.extend([pattern, pattern])
+            if request_type in _PRODUCT_REQUEST_TYPES:
+                keyword_clauses.append("title ILIKE %s")
+                params.append(pattern)
+            else:
+                keyword_clauses.append("(title ILIKE %s OR content ILIKE %s)")
+                params.extend([pattern, pattern])
         conditions.append("(" + " OR ".join(keyword_clauses) + ")")
 
     min_price = intent.get("min_price")
@@ -282,7 +319,6 @@ def search_channel_posts(intent, limit=10):
         conditions.append("price <= %s")
         params.append(max_price)
 
-    request_type = intent.get("request_type")
     if request_type == "trending":
         ordering = (
             "COUNT(*) OVER (PARTITION BY COALESCE(aliexpress_product_id, title)) DESC, "
@@ -319,6 +355,33 @@ def search_channel_posts(intent, limit=10):
 
 def save_channel_photo_file_id(post_id, photo_file_id):
     update_channel_post(post_id, photo_file_id=photo_file_id)
+
+
+def delete_expired_channel_posts():
+    """Delete every channel post older than the three-day retention window."""
+    if not DATABASE_URL:
+        return 0
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM statu
+                WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '3 days'
+                """
+            )
+            deleted_rows = cursor.rowcount
+        conn.commit()
+        return deleted_rows
+    except Exception:
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
 
 
 def save_user(chat_id, first_name, last_name):
