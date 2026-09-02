@@ -16,3 +16,15 @@ services:
       sync: false
     - key: TRACKING_ID
       sync: false
+    - key: EXTERNAL_DATABASE_URL
+      sync: false
+    - key: GEMINI_API_KEY
+      sync: false
+    - key: TELEGRAM_API_ID
+      sync: false
+    - key: TELEGRAM_API_HASH
+      sync: false
+    - key: TELEGRAM_SESSION_STRING
+      sync: false
+    - key: CHANNEL_HISTORY_LIMIT
+      sync: false

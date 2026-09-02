@@ -14,6 +14,10 @@ GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')
 TELEGRAM_API_ID = int(os.getenv('TELEGRAM_API_ID', '0') or 0)
 TELEGRAM_API_HASH = os.getenv('TELEGRAM_API_HASH', '')
 TELEGRAM_SESSION_STRING = os.getenv('TELEGRAM_SESSION_STRING', '')
+try:
+    CHANNEL_HISTORY_LIMIT = max(0, int(os.getenv('CHANNEL_HISTORY_LIMIT', '10') or 10))
+except ValueError:
+    CHANNEL_HISTORY_LIMIT = 10
 CHANNEL_TELEGRAM_REPLACEMENT_LINK = os.getenv(
     'CHANNEL_TELEGRAM_REPLACEMENT_LINK',
     'https://t.me/rabahcopons/7366',

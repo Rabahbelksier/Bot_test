@@ -84,6 +84,7 @@ Telegram bot that generates affiliate links for AliExpress products. Users send 
 - `TELEGRAM_API_ID`: Telegram API ID for the dedicated monitoring account
 - `TELEGRAM_API_HASH`: Telegram API hash for the dedicated monitoring account
 - `TELEGRAM_SESSION_STRING`: Authorized StringSession for the dedicated monitoring account
+- `CHANNEL_HISTORY_LIMIT`: Number of recent posts to synchronize per channel at startup
 - `CHANNEL_TELEGRAM_REPLACEMENT_LINK`: Optional replacement for Telegram links in stored copies
 
 ## Database Schema
