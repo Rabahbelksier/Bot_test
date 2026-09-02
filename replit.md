@@ -74,7 +74,9 @@ Telegram bot that generates affiliate links for AliExpress products. Users send 
 - `APP_SECRET`: AliExpress API secret
 - `TRACKING_ID`: Affiliate tracking ID
 - `TELEGRAM_TOKEN`: Telegram bot token
-- `DATABASE_URL`: PostgreSQL connection string
+- `EXTERNAL_DATABASE_URL`: Preferred PostgreSQL connection string for the
+  external application database
+- `DATABASE_URL`: Fallback PostgreSQL connection string
 - `PORT`: Server port (default 5000)
 - `RENDER_EXTERNAL_URL`: Render external URL for webhook setup
 - `GEMINI_API_KEY`: Gemini API key for channel analysis and natural-language offer search

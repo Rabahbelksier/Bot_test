@@ -4,7 +4,9 @@ APP_KEY = os.getenv('APP_KEY')
 APP_SECRET = os.getenv('APP_SECRET')
 TRACKING_ID = os.getenv('TRACKING_ID')
 TOKEN = os.getenv('TELEGRAM_TOKEN')
-DATABASE_URL = os.getenv('DATABASE_URL')
+# Prefer the explicitly configured external database when available. Replit's
+# DATABASE_URL is the built-in development database in this workspace.
+DATABASE_URL = os.getenv('EXTERNAL_DATABASE_URL') or os.getenv('DATABASE_URL')
 PORT = int(os.getenv('PORT', 5000))
 RENDER_EXTERNAL_URL = os.getenv('RENDER_EXTERNAL_URL', '')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
