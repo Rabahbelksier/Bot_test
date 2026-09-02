@@ -37,12 +37,22 @@ _SHORT_LINK_HEADERS = {
 }
 
 
+def extract_aliexpress_urls(text):
+    """Return all unique AliExpress URLs in their original order."""
+    urls = []
+    seen = set()
+    for url in _ALIEXPRESS_URL_PATTERN.findall(text or ""):
+        if not any(domain in url for domain in _ALIEXPRESS_DOMAINS):
+            continue
+        normalized = url.rstrip('.,!?;:)]}\'"')
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            urls.append(normalized)
+    return urls
+
+
 def extract_aliexpress_url(text):
-    urls = _ALIEXPRESS_URL_PATTERN.findall(text or "")
-    return next(
-        (url for url in urls if any(domain in url for domain in _ALIEXPRESS_DOMAINS)),
-        None,
-    )
+    return next(iter(extract_aliexpress_urls(text)), None)
 
 
 def _match_product_id_from_url(url):

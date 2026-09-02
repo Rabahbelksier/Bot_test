@@ -33,12 +33,255 @@ def init_db():
             ALTER TABLE IF EXISTS cart
             ADD COLUMN IF NOT EXISTS ship NUMERIC(12, 2)
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS telegram_channels (
+                id BIGSERIAL PRIMARY KEY,
+                link TEXT NOT NULL UNIQUE
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS statu (
+                id BIGSERIAL PRIMARY KEY,
+                title TEXT,
+                price NUMERIC(12, 2),
+                content TEXT,
+                processing_status TEXT NOT NULL DEFAULT 'pending',
+                source_link TEXT,
+                published_at TIMESTAMPTZ,
+                photo_file_id TEXT,
+                source_channel_id BIGINT,
+                source_message_id BIGINT,
+                aliexpress_product_id TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (source_channel_id, source_message_id)
+            )
+        """)
+        # Keep imported databases compatible with the new channel-post schema.
+        for column_definition in (
+            "title TEXT",
+            "price NUMERIC(12, 2)",
+            "content TEXT",
+            "processing_status TEXT NOT NULL DEFAULT 'pending'",
+            "source_link TEXT",
+            "published_at TIMESTAMPTZ",
+            "photo_file_id TEXT",
+            "source_channel_id BIGINT",
+            "source_message_id BIGINT",
+            "aliexpress_product_id TEXT",
+            "created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        ):
+            column_name = column_definition.split()[0]
+            cur.execute(
+                f"ALTER TABLE IF EXISTS statu ADD COLUMN IF NOT EXISTS "
+                f"{column_name} {column_definition[len(column_name) + 1:]}"
+            )
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_statu_source_message
+            ON statu (source_channel_id, source_message_id)
+        """)
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_channels_link
+            ON telegram_channels (link)
+        """)
         conn.commit()
         cur.close()
         conn.close()
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Database initialization error: {e}")
+
+
+def get_telegram_channel_links():
+    """Return configured channel links in database order."""
+    if not DATABASE_URL:
+        return []
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, link FROM telegram_channels ORDER BY id")
+            return [
+                {"id": row[0], "link": row[1]}
+                for row in cursor.fetchall()
+            ]
+    finally:
+        if conn:
+            conn.close()
+
+
+def create_channel_post(
+    source_channel_id,
+    source_message_id,
+    source_link,
+    published_at,
+    photo_file_id=None,
+):
+    """Claim a channel post for processing, returning its id once."""
+    if not DATABASE_URL:
+        return None
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO statu (
+                    source_channel_id,
+                    source_message_id,
+                    source_link,
+                    published_at,
+                    photo_file_id,
+                    processing_status
+                )
+                VALUES (%s, %s, %s, %s, %s, 'processing')
+                ON CONFLICT (source_channel_id, source_message_id)
+                DO NOTHING
+                RETURNING id
+                """,
+                (
+                    source_channel_id,
+                    source_message_id,
+                    source_link,
+                    published_at,
+                    photo_file_id,
+                ),
+            )
+            row = cursor.fetchone()
+        conn.commit()
+        return row[0] if row else None
+    finally:
+        if conn:
+            conn.close()
+
+
+def update_channel_post(post_id, **fields):
+    """Update an allow-listed set of processed channel post fields."""
+    allowed_fields = {
+        "title",
+        "price",
+        "content",
+        "processing_status",
+        "source_link",
+        "published_at",
+        "photo_file_id",
+        "aliexpress_product_id",
+    }
+    updates = [(name, value) for name, value in fields.items() if name in allowed_fields]
+    if not updates or not DATABASE_URL:
+        return
+
+    assignments = ", ".join(f"{name} = %s" for name, _ in updates)
+    values = [value for _, value in updates]
+    values.append(post_id)
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"UPDATE statu SET {assignments} WHERE id = %s",
+                values,
+            )
+        conn.commit()
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_channel_post(post_id):
+    if not DATABASE_URL:
+        return None
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, title, price, content, processing_status,
+                       source_link, published_at, photo_file_id,
+                       source_channel_id, source_message_id,
+                       aliexpress_product_id
+                FROM statu
+                WHERE id = %s AND processing_status = 'processed'
+                """,
+                (post_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            columns = [description[0] for description in cursor.description]
+            return dict(zip(columns, row))
+    finally:
+        if conn:
+            conn.close()
+
+
+def search_channel_posts(intent, limit=10):
+    """Search processed posts using structured, parameterized intent data."""
+    if not DATABASE_URL:
+        return []
+
+    keywords = [
+        str(keyword).strip()
+        for keyword in intent.get("keywords", [])
+        if str(keyword).strip()
+    ][:6]
+    conditions = ["processing_status = 'processed'"]
+    params = []
+
+    if keywords:
+        keyword_clauses = []
+        for keyword in keywords:
+            pattern = f"%{keyword}%"
+            keyword_clauses.append("(title ILIKE %s OR content ILIKE %s)")
+            params.extend([pattern, pattern])
+        conditions.append("(" + " OR ".join(keyword_clauses) + ")")
+
+    min_price = intent.get("min_price")
+    max_price = intent.get("max_price")
+    if min_price is not None:
+        conditions.append("price >= %s")
+        params.append(min_price)
+    if max_price is not None:
+        conditions.append("price <= %s")
+        params.append(max_price)
+
+    request_type = intent.get("request_type")
+    if request_type == "trending":
+        ordering = (
+            "COUNT(*) OVER (PARTITION BY COALESCE(aliexpress_product_id, title)) DESC, "
+            "published_at DESC NULLS LAST"
+        )
+    elif request_type in {"category_cheapest", "product_cheapest", "product_price_range"}:
+        ordering = "price ASC NULLS LAST, published_at DESC NULLS LAST"
+    else:
+        ordering = "published_at DESC NULLS LAST, price ASC NULLS LAST"
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT id, title, price, content, processing_status,
+                       source_link, published_at, photo_file_id,
+                       source_channel_id, source_message_id,
+                       aliexpress_product_id
+                FROM statu
+                WHERE {' AND '.join(conditions)}
+                ORDER BY {ordering}
+                LIMIT %s
+                """,
+                [*params, max(1, min(int(limit), 20))],
+            )
+            columns = [description[0] for description in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    finally:
+        if conn:
+            conn.close()
+
+
+def save_channel_photo_file_id(post_id, photo_file_id):
+    update_channel_post(post_id, photo_file_id=photo_file_id)
 
 
 def save_user(chat_id, first_name, last_name):

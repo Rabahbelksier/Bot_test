@@ -77,6 +77,12 @@ Telegram bot that generates affiliate links for AliExpress products. Users send 
 - `DATABASE_URL`: PostgreSQL connection string
 - `PORT`: Server port (default 5000)
 - `RENDER_EXTERNAL_URL`: Render external URL for webhook setup
+- `GEMINI_API_KEY`: Gemini API key for channel analysis and natural-language offer search
+- `GEMINI_MODEL`: Optional Gemini model name (default: `gemini-2.0-flash`)
+- `TELEGRAM_API_ID`: Telegram API ID for the dedicated monitoring account
+- `TELEGRAM_API_HASH`: Telegram API hash for the dedicated monitoring account
+- `TELEGRAM_SESSION_STRING`: Authorized StringSession for the dedicated monitoring account
+- `CHANNEL_TELEGRAM_REPLACEMENT_LINK`: Optional replacement for Telegram links in stored copies
 
 ## Database Schema
 - **user_bot** table: first_name (TEXT), last_name (TEXT), chat_id (BIGINT PRIMARY KEY)
@@ -102,3 +108,16 @@ Telegram bot that generates affiliate links for AliExpress products. Users send 
 - 2026-04-11: Major performance optimization — parallel link generation + concurrent product fetch/links
 - 2026-04-16: Performance optimizations: reduced threads, improved cache, batched requests, lock-free reads
 - 2026-04-16: Refactored to modular architecture (core/, handlers/, services/, utils/)
+
+## Channel monitoring and AI search
+- `telegram_channels` intentionally contains only `id` and `link`; links are resolved by
+  the MTProto monitor at startup.
+- `statu` stores the modified post copy, processing state, source identifiers, publication
+  date, and `photo_file_id`. Duplicate source channel/message pairs are ignored.
+- The original channel post is never edited. Telegram links in the stored copy are replaced
+  with `CHANNEL_TELEGRAM_REPLACEMENT_LINK`, and every AliExpress URL is affiliate-generated.
+- A Telegram user `StringSession` is required because Bot API membership is not used for
+  monitoring. The bot remains responsible for user messages and replies.
+- With MTProto monitoring, the source account's media identifier is not a Bot API
+  `file_id`. The monitor downloads a photo on first user delivery; the bot then caches
+  the returned Bot API `photo_file_id` in `statu` for later deliveries.

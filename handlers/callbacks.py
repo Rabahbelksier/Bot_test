@@ -16,6 +16,7 @@ from utils.app_promotion import (
 )
 from utils.telegram import remove_pressed_button
 from core.smart_cart import other_smart_cart_callback, select_coupon, start_smart_cart
+from handlers.ai_search import ai_next_callback, ask_ai_callback
 
 logger = logging.getLogger(__name__)
 

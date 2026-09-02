@@ -8,6 +8,7 @@ from core.product import get_product_info_from_api
 from core.affiliate import generate_affiliate_links
 from core.scraper import get_product_details_scraping
 from utils.app_promotion import app_promotion_button
+from handlers.ai_search import ask_ai_button
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ async def process_link_for_user(chat_id: int, url: str, context):
         keyboard = [
             [InlineKeyboardButton("📋 تفاصيل المنتج الكاملة", callback_data=f"details_{product_id}")],
             [InlineKeyboardButton("🛒 استعمال طريقة السلة الذكية AI", callback_data=f"smart_cart_{product_id}")],
+            [ask_ai_button()],
             [InlineKeyboardButton("الكوبونات", callback_data="show_coupons")],
             [app_promotion_button()],
         ]

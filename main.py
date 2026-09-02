@@ -21,7 +21,9 @@ from handlers.callbacks import (
     select_coupon,
     smart_cart_callback,
 )
+from handlers.ai_search import ai_next_callback, ask_ai_callback
 from core.scraper import get_product_details_scraping
+from services.channel_monitor import ChannelMonitor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -52,10 +54,13 @@ telegram_app.add_handler(
 telegram_app.add_handler(
     CallbackQueryHandler(admin_callback, pattern="^admin_(edit|add|exit)(_[0-9]+)?$")
 )
+telegram_app.add_handler(CallbackQueryHandler(ask_ai_callback, pattern="^ask_ai$"))
+telegram_app.add_handler(CallbackQueryHandler(ai_next_callback, pattern="^ai_next$"))
 
 _loop = None
 _initialized = False
 _init_lock = threading.Lock()
+channel_monitor = ChannelMonitor()
 
 BOT_COMMANDS = [
     BotCommand("start", "بدء استخدام البوت"),
@@ -86,6 +91,12 @@ def _ensure_ready():
             f.result(timeout=30)
         except Exception:
             logger.exception("Failed to configure Telegram command menu")
+        telegram_app.bot_data["channel_monitor"] = channel_monitor
+        try:
+            f = asyncio.run_coroutine_threadsafe(channel_monitor.start(), _loop)
+            f.result(timeout=30)
+        except Exception:
+            logger.exception("Channel monitor could not be started")
         _initialized = True
         logger.info("Telegram app ready in worker process")
         return _loop
@@ -132,8 +143,20 @@ def scrape_product():
 def set_webhook():
     if RENDER_EXTERNAL_URL:
         webhook_url = f"{RENDER_EXTERNAL_URL}/{TOKEN}"
-        url = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={webhook_url}"
-        response = requests.get(url)
+        url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
+        response = requests.post(
+            url,
+            json={
+                "url": webhook_url,
+                "allowed_updates": [
+                    "message",
+                    "callback_query",
+                    "channel_post",
+                    "edited_channel_post",
+                ],
+            },
+            timeout=15,
+        )
         logger.info(f"Webhook set response: {response.json()}")
     else:
         logger.warning("RENDER_EXTERNAL_URL not set, webhook not configured")

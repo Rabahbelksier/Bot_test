@@ -3,7 +3,7 @@ modules = ["python-3.12"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["gitFull", "playwright-driver", "xcodebuild", "zlib"]
+packages = ["gitFull", "openssl", "playwright-driver", "xcodebuild", "zlib"]
 
 [unitTest]
 language = "python3"
