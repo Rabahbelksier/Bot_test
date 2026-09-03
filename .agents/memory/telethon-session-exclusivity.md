@@ -10,6 +10,6 @@ does not repair it.
 **Why:** Channel monitoring and source-photo downloads depend on the MTProto user session, while
 the Bot API can continue serving users even when that monitor cannot connect.
 
-**How to apply:** Keep one active worker per session. If the authorization key is duplicated,
-generate and store a genuinely new session securely, and stop the other worker using the old one
-before testing channel history or photo delivery.
+**How to apply:** Keep one active worker or Railway replica per session. If the authorization key
+is duplicated, generate and store a genuinely new session securely, and stop the other worker
+using the old one before testing channel history or photo delivery.

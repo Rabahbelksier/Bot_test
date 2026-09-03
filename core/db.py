@@ -32,7 +32,6 @@ _GENERIC_PRODUCT_KEYWORDS = {
 _CATEGORY_ALIASES = {
     "phones": {
         "phone", "phones", "smartphone", "smartphones", "mobile", "mobiles",
-        "iphone",
         "هاتف", "هواتف", "جوال", "جوالات", "موبايل", "موبايلات",
     },
     "headphones": {
@@ -59,6 +58,7 @@ _FUZZY_TOKEN_THRESHOLD = 0.72
 _SEARCH_CANDIDATE_LIMIT = 500
 _CATEGORY_BRANDS = {
     "phones": {
+        "iphone",
         "samsung", "galaxy", "xiaomi", "redmi", "poco", "pixel",
         "oneplus", "oppo", "realme", "vivo", "honor", "blackview",
         "tcl", "alcatel", "nokia", "motorola", "infinix", "tecno",
