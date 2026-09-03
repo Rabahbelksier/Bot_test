@@ -10,6 +10,7 @@ from handlers.ai_search import (
     AI_SEARCH_BUTTON_TEXT,
     _navigation_keyboard,
     _replace_stored_post_message,
+    ai_next_callback,
     handle_ai_search_button_message,
     handle_ai_search_message,
     send_stored_post,
@@ -131,6 +132,140 @@ class AiSearchTests(unittest.IsolatedAsyncioTestCase):
         edit_kwargs = context.bot.edit_message_text.await_args.kwargs
         buttons = edit_kwargs["reply_markup"].inline_keyboard[0]
         self.assertEqual([button.text for button in buttons], ["السابق"])
+
+    async def test_search_keeps_complete_results_for_fast_navigation(self):
+        context = FakeContext()
+        message = FakeMessage("أرخص الهواتف")
+        posts = [
+            {"id": 1, "title": "هاتف أول"},
+            {"id": 2, "title": "هاتف ثان"},
+        ]
+        update = SimpleNamespace(
+            effective_message=message,
+            effective_chat=SimpleNamespace(id=123),
+        )
+
+        with patch(
+            "handlers.ai_search.parse_user_request",
+            return_value={"request_type": "category_cheapest"},
+        ), patch(
+            "handlers.ai_search.search_channel_posts",
+            return_value=posts,
+        ), patch(
+            "handlers.ai_search.send_stored_post",
+            new=AsyncMock(),
+        ) as send_post:
+            handled = await handle_ai_search_message(update, context)
+
+        self.assertTrue(handled)
+        self.assertEqual(context.user_data["ai_search_results"], posts)
+        self.assertEqual(context.user_data["ai_search_index"], 0)
+        send_post.assert_awaited_once_with(
+            123,
+            context,
+            posts[0],
+            has_previous=False,
+            has_next=True,
+        )
+
+    async def test_next_uses_in_memory_result_without_database_lookup(self):
+        context = FakeContext()
+        context.user_data["ai_search_results"] = [
+            {"id": 1, "title": "العرض الأول"},
+            {"id": 2, "title": "العرض الثاني", "photo_file_id": "cached-photo"},
+        ]
+        context.user_data["ai_search_index"] = 0
+        query_message = SimpleNamespace(
+            chat=SimpleNamespace(id=123),
+            message_id=456,
+            photo=None,
+            reply_text=AsyncMock(),
+        )
+        query = SimpleNamespace(
+            message=query_message,
+            answer=AsyncMock(),
+        )
+        update = SimpleNamespace(callback_query=query)
+
+        with patch(
+            "handlers.ai_search.get_channel_post",
+            side_effect=AssertionError("navigation should not query the database"),
+        ), patch(
+            "handlers.ai_search._replace_stored_post_message",
+            new=AsyncMock(),
+        ) as replace_post:
+            await ai_next_callback(update, context)
+
+        query.answer.assert_awaited_once()
+        replace_post.assert_awaited_once_with(
+            query,
+            context,
+            context.user_data["ai_search_results"][1],
+            has_previous=True,
+            has_next=False,
+        )
+        self.assertEqual(context.user_data["ai_search_index"], 1)
+
+    async def test_navigation_does_not_wait_for_uncached_source_photo(self):
+        context = FakeContext()
+        context.bot = SimpleNamespace(
+            edit_message_text=AsyncMock(),
+            delete_message=AsyncMock(),
+            send_message=AsyncMock(),
+        )
+        message = SimpleNamespace(
+            chat=SimpleNamespace(id=123),
+            message_id=456,
+            photo=None,
+        )
+        query = SimpleNamespace(message=message)
+        post = {
+            "id": 43,
+            "content": "عرض سريع بدون صورة مخزنة",
+            "photo_file_id": None,
+            "source_channel_id": -100,
+            "source_message_id": 8,
+        }
+
+        with patch(
+            "handlers.ai_search._download_source_photo",
+            new=AsyncMock(side_effect=AssertionError("photo download should be skipped")),
+        ):
+            await _replace_stored_post_message(
+                query,
+                context,
+                post,
+                has_previous=True,
+                has_next=False,
+            )
+
+        context.bot.edit_message_text.assert_awaited_once()
+
+    async def test_failed_navigation_does_not_advance_index(self):
+        context = FakeContext()
+        context.user_data["ai_search_results"] = [
+            {"id": 1, "title": "العرض الأول"},
+            {"id": 2, "title": "العرض الثاني"},
+        ]
+        context.user_data["ai_search_index"] = 0
+        query_message = SimpleNamespace(
+            chat=SimpleNamespace(id=123),
+            reply_text=AsyncMock(),
+        )
+        query = SimpleNamespace(
+            message=query_message,
+            answer=AsyncMock(),
+        )
+        update = SimpleNamespace(callback_query=query)
+
+        with patch(
+            "handlers.ai_search._replace_stored_post_message",
+            new=AsyncMock(side_effect=RuntimeError("Telegram error")),
+        ):
+            await ai_next_callback(update, context)
+
+        self.assertEqual(context.user_data["ai_search_index"], 0)
+        query_message.reply_text.assert_awaited_once()
 
     def test_navigation_buttons_are_side_by_side(self):
         markup = _navigation_keyboard(has_previous=True, has_next=True)

@@ -49,6 +49,15 @@ def _clear_ai_search_state(context):
     context.user_data.pop("ai_search_index", None)
 
 
+def _navigation_lock(context):
+    """Serialize navigation clicks for one user's current search."""
+    lock = context.user_data.get("ai_search_navigation_lock")
+    if lock is None:
+        lock = asyncio.Lock()
+        context.user_data["ai_search_navigation_lock"] = lock
+    return lock
+
+
 def ask_ai_button():
     return InlineKeyboardButton(
         AI_SEARCH_BUTTON_TEXT,
@@ -152,10 +161,12 @@ async def _download_source_photo(post, context):
         return None
 
 
-async def _load_post_photo(post, context):
+async def _load_post_photo(post, context, allow_source_download=True):
     photo = post.get("photo_file_id")
     if photo:
         return photo, False
+    if not allow_source_download:
+        return None, False
     photo = await _download_source_photo(post, context)
     return photo, photo is not None
 
@@ -200,11 +211,16 @@ async def send_stored_post(
     post,
     has_previous=False,
     has_next=False,
+    allow_source_download=True,
 ):
     """Send the stored post without adding a custom content template."""
     bot = context.bot
     content = _post_content(post)
-    photo, downloaded_source = await _load_post_photo(post, context)
+    photo, downloaded_source = await _load_post_photo(
+        post,
+        context,
+        allow_source_download=allow_source_download,
+    )
     navigation = _navigation_keyboard(has_previous, has_next)
 
     if photo:
@@ -267,7 +283,13 @@ async def _replace_stored_post_message(query, context, post, has_previous, has_n
     chat_id = message.chat.id
     message_id = message.message_id
     content = _post_content(post)
-    photo, downloaded_source = await _load_post_photo(post, context)
+    # Navigation must never wait for a new MTProto media download. A cached
+    # Bot API file_id is still used, while uncached posts are shown as text.
+    photo, downloaded_source = await _load_post_photo(
+        post,
+        context,
+        allow_source_download=False,
+    )
     navigation = _navigation_keyboard(has_previous, has_next)
 
     await _delete_auxiliary_messages(bot, chat_id, context)
@@ -306,6 +328,7 @@ async def _replace_stored_post_message(query, context, post, has_previous, has_n
             post,
             has_previous=has_previous,
             has_next=has_next,
+            allow_source_download=False,
         )
         return sent
 
@@ -376,7 +399,11 @@ async def handle_ai_search_message(update: Update, context: ContextTypes.DEFAULT
         )
         return True
 
-    context.user_data["ai_search_results"] = [post["id"] for post in posts]
+    # Keep the ranked posts in memory for the whole search session. Re-reading
+    # each result by id made every navigation click wait for a new DB
+    # connection, and could also fail when the retention cleanup ran between
+    # the search and a later click.
+    context.user_data["ai_search_results"] = posts
     context.user_data["ai_search_index"] = 0
     await send_stored_post(
         update.effective_chat.id,
@@ -392,25 +419,42 @@ async def _navigate_ai_results(update, context, direction):
     query = update.callback_query
     await query.answer()
 
-    result_ids = context.user_data.get("ai_search_results", [])
-    current_index = context.user_data.get("ai_search_index", 0)
-    index = current_index + direction
-    if index < 0 or index >= len(result_ids):
-        return
+    async with _navigation_lock(context):
+        results = context.user_data.get("ai_search_results", [])
+        current_index = context.user_data.get("ai_search_index", 0)
+        index = current_index + direction
+        if index < 0 or index >= len(results):
+            return
 
-    post = await asyncio.to_thread(get_channel_post, result_ids[index])
-    if not post:
-        await query.message.reply_text("تعذر العثور على العرض التالي.")
-        return
+        result = results[index]
+        # Accept the former id-only state as a compatibility path for an
+        # update already in flight during a deployment. New searches store
+        # complete posts and avoid this database round trip.
+        if isinstance(result, dict):
+            post = result
+        else:
+            post = await asyncio.to_thread(get_channel_post, result)
+        if not post:
+            await query.message.reply_text("تعذر العثور على العرض التالي.")
+            return
 
-    context.user_data["ai_search_index"] = index
-    await _replace_stored_post_message(
-        query,
-        context,
-        post,
-        has_previous=index > 0,
-        has_next=index < len(result_ids) - 1,
-    )
+        try:
+            await _replace_stored_post_message(
+                query,
+                context,
+                post,
+                has_previous=index > 0,
+                has_next=index < len(results) - 1,
+            )
+        except Exception:
+            logger.exception("Could not display AI search result at index %s", index)
+            await query.message.reply_text(
+                "تعذر عرض هذا العرض حاليًا، حاول الضغط على التالي مرة أخرى."
+            )
+            return
+
+        # Advance only after the new result has been rendered successfully.
+        context.user_data["ai_search_index"] = index
 
 
 async def ai_next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
