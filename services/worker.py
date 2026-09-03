@@ -8,20 +8,33 @@ from core.product import get_product_info_from_api
 from core.affiliate import generate_affiliate_links
 from core.scraper import get_product_details_scraping
 from utils.app_promotion import app_promotion_button
-from handlers.ai_search import ask_ai_button
+from handlers.ai_search import ai_search_reply_keyboard, ask_ai_button
 
 logger = logging.getLogger(__name__)
 
 
 async def process_link_for_user(chat_id: int, url: str, context):
     bot = context.bot
+    restore_ai_keyboard = context.user_data.pop(
+        "restore_ai_search_keyboard",
+        False,
+    )
+    reply_keyboard = ai_search_reply_keyboard() if restore_ai_keyboard else None
 
     product_id = await asyncio.to_thread(extract_product_id, url)
     if not product_id:
-        await bot.send_message(chat_id=chat_id, text="❌ انسخ رابط المنتج من تطبيق aliexpress او الموقع")
+        await bot.send_message(
+            chat_id=chat_id,
+            text="❌ انسخ رابط المنتج من تطبيق aliexpress او الموقع",
+            reply_markup=reply_keyboard,
+        )
         return
 
-    loading_msg = await bot.send_message(chat_id=chat_id, text="⏳ جاري البحث عن العروض")
+    loading_msg = await bot.send_message(
+        chat_id=chat_id,
+        text="⏳ جاري البحث عن العروض",
+        reply_markup=reply_keyboard,
+    )
 
     try:
         product_task = asyncio.to_thread(get_product_info_from_api, product_id)

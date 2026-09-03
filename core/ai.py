@@ -37,6 +37,17 @@ _REQUEST_TYPES = {
     "trending",
     "unsupported",
 }
+_REQUEST_CATEGORIES = {
+    "phones",
+    "headphones",
+    "tablets",
+    "laptops",
+    "watches",
+    "cameras",
+    "gaming",
+    "home",
+    "other",
+}
 
 
 class GeminiError(RuntimeError):
@@ -199,7 +210,7 @@ def analyze_channel_post(text):
 
 المطلوب:
 - is_offer: true فقط إذا كان المنشور عرضًا حقيقيًا على منتج.
-- title: عنوان المنتج المختصر، أو null.
+    - title: اسم المنتج المختصر مع نوعه عند الإمكان، مثل "هاتف iPhone 15"، أو null.
 - discounted_price: السعر النهائي بعد التخفيض بالدولار، أو null.
 - Ignore posts that are announcements, general news, coupon-only posts,
   or do not describe a specific product offer.
@@ -236,15 +247,24 @@ def parse_user_request(text):
 - trending: عروض رائجة أو متكررة اليوم
 - unsupported: أي طلب خارج هذه الأنواع
 
+category يجب أن تكون واحدة من:
+phones, headphones, tablets, laptops, watches, cameras, gaming, home, other
+أو null إذا كان الطلب عن منتج محدد ولا يمكن تحديد فئته.
+
 أعد النموذج التالي:
 {{
   "request_type": "unsupported",
   "keywords": [],
+  "category": null,
   "min_price": null,
   "max_price": null
 }}
 
 ضع كلمات البحث بالعربية والإنجليزية عند الحاجة داخل keywords.
+لا تضع كلمات الطلب العامة مثل: أرخص، أفضل، عرض، سعر، دولار، هاتف، phone
+إلا إذا كانت هي الفئة المطلوبة. عند وجود خطأ إملائي، أعد الاسم المصحح
+والصيغ البديلة المحتملة للمنتج داخل keywords. للطلبات عن فئة، category
+مطلوب واستخدم كلمات الفئة فقط.
 لا تنشئ SQL ولا تضف مفاتيح أخرى.
 
 طلب المستخدم:
@@ -258,6 +278,9 @@ def parse_user_request(text):
     keywords = result.get("keywords")
     if not isinstance(keywords, list):
         keywords = []
+    category = result.get("category")
+    if category not in _REQUEST_CATEGORIES:
+        category = None
 
     min_price = _coerce_price(result.get("min_price"))
     max_price = _coerce_price(result.get("max_price"))
@@ -267,6 +290,7 @@ def parse_user_request(text):
     return {
         "request_type": request_type,
         "keywords": [str(item).strip()[:100] for item in keywords[:6] if str(item).strip()],
+        "category": category,
         "min_price": min_price,
         "max_price": max_price,
     }

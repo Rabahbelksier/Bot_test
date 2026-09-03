@@ -8,6 +8,8 @@ from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
 import core.db as db
 from handlers.ai_search import (
     AI_SEARCH_BUTTON_TEXT,
+    _navigation_keyboard,
+    _replace_stored_post_message,
     handle_ai_search_button_message,
     handle_ai_search_message,
     send_stored_post,
@@ -58,7 +60,8 @@ class AiSearchTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(handled)
         self.assertNotIn("ai_search_active", context.user_data)
-        self.assertIsInstance(message.replies[-1][1], ReplyKeyboardMarkup)
+        self.assertEqual(message.replies, [])
+        self.assertTrue(context.user_data["restore_ai_search_keyboard"])
 
     async def test_source_photo_is_uploaded_and_cached(self):
         context = FakeContext()
@@ -88,6 +91,55 @@ class AiSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(uploaded.filename, "channel-post-42.jpg")
         cache.assert_awaited_once_with(42, "bot-file-id")
 
+    async def test_navigation_replaces_existing_text_message(self):
+        context = FakeContext()
+        context.bot = SimpleNamespace(
+            edit_message_text=AsyncMock(),
+            delete_message=AsyncMock(),
+            send_message=AsyncMock(),
+        )
+        message = SimpleNamespace(
+            chat=SimpleNamespace(id=123),
+            message_id=456,
+            photo=None,
+        )
+        query = SimpleNamespace(
+            message=message,
+            answer=AsyncMock(),
+        )
+        post = {
+            "id": 43,
+            "content": "عرض آخر",
+            "title": "عرض آخر",
+            "photo_file_id": None,
+            "source_channel_id": -100,
+            "source_message_id": 8,
+        }
+
+        with patch(
+            "handlers.ai_search._load_post_photo",
+            new=AsyncMock(return_value=(None, False)),
+        ):
+            await _replace_stored_post_message(
+                query,
+                context,
+                post,
+                has_previous=True,
+                has_next=False,
+            )
+
+        edit_kwargs = context.bot.edit_message_text.await_args.kwargs
+        buttons = edit_kwargs["reply_markup"].inline_keyboard[0]
+        self.assertEqual([button.text for button in buttons], ["السابق"])
+
+    def test_navigation_buttons_are_side_by_side(self):
+        markup = _navigation_keyboard(has_previous=True, has_next=True)
+
+        self.assertEqual(
+            [button.text for button in markup.inline_keyboard[0]],
+            ["السابق", "التالي"],
+        )
+
 
 class DatabaseSearchTests(unittest.TestCase):
     @patch.object(db, "DATABASE_URL", "postgres://test")
@@ -109,9 +161,8 @@ class DatabaseSearchTests(unittest.TestCase):
         )
 
         query, params = cursor.execute.call_args.args
-        self.assertIn("title ILIKE", query)
         self.assertNotIn("content ILIKE", query)
-        self.assertEqual(params, ["%iPhone 15%", 3])
+        self.assertEqual(params, [500])
 
     @patch.object(db, "DATABASE_URL", "postgres://test")
     @patch.object(db, "get_db_connection")
@@ -125,6 +176,37 @@ class DatabaseSearchTests(unittest.TestCase):
         self.assertEqual(deleted, 2)
         query = cursor.execute.call_args.args[0]
         self.assertIn("CURRENT_TIMESTAMP - INTERVAL '3 days'", query)
+
+    def test_category_and_typo_matching_stay_in_the_requested_product_family(self):
+        from core.db import _post_match_score
+
+        phone_intent = {
+            "request_type": "category_price_range",
+            "category": "phones",
+        }
+        self.assertIsNotNone(
+            _post_match_score(
+                {"title": "iPhone 15 Pro"},
+                phone_intent,
+                ["هواتف", "phones"],
+            )
+        )
+        self.assertIsNone(
+            _post_match_score(
+                {"title": "Bluetooth Earbuds"},
+                phone_intent,
+                ["هواتف", "phones"],
+            )
+        )
+
+        product_intent = {"request_type": "product_best"}
+        self.assertIsNotNone(
+            _post_match_score(
+                {"title": "iPhone 15 Pro"},
+                product_intent,
+                ["iphnoe 15"],
+            )
+        )
 
 
 if __name__ == "__main__":

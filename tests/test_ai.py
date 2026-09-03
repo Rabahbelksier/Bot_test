@@ -35,6 +35,7 @@ class AiParsingTests(unittest.TestCase):
             {
                 "request_type": "category_price_range",
                 "keywords": ["هواتف", "phones"],
+                "category": None,
                 "min_price": 50.0,
                 "max_price": 100.0,
             },

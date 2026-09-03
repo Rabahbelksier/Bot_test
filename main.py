@@ -13,7 +13,7 @@ from telegram.ext import (
     filters,
 )
 
-from config import TOKEN, PORT, RENDER_EXTERNAL_URL
+from config import PUBLIC_URL, TOKEN, PORT
 from core.db import init_db
 from handlers.help import help_command, help_topic_callback
 from handlers.start import start
@@ -29,6 +29,7 @@ from handlers.callbacks import (
 )
 from handlers.ai_search import (
     ai_next_callback,
+    ai_previous_callback,
     ask_ai_callback,
 )
 from core.scraper import get_product_details_scraping
@@ -65,6 +66,9 @@ telegram_app.add_handler(
 )
 telegram_app.add_handler(CallbackQueryHandler(ask_ai_callback, pattern="^ask_ai$"))
 telegram_app.add_handler(CallbackQueryHandler(ai_next_callback, pattern="^ai_next$"))
+telegram_app.add_handler(
+    CallbackQueryHandler(ai_previous_callback, pattern="^ai_previous$")
+)
 
 _loop = None
 _initialized = False
@@ -150,8 +154,8 @@ def scrape_product():
 
 
 def set_webhook():
-    if RENDER_EXTERNAL_URL:
-        webhook_url = f"{RENDER_EXTERNAL_URL}/{TOKEN}"
+    if PUBLIC_URL:
+        webhook_url = f"{PUBLIC_URL}/{TOKEN}"
         url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
         response = requests.post(
             url,
@@ -168,7 +172,10 @@ def set_webhook():
         )
         logger.info(f"Webhook set response: {response.json()}")
     else:
-        logger.warning("RENDER_EXTERNAL_URL not set, webhook not configured")
+        logger.warning(
+            "PUBLIC_URL, RENDER_EXTERNAL_URL, or RAILWAY_PUBLIC_DOMAIN is not set; "
+            "webhook not configured"
+        )
 
 
 init_db()

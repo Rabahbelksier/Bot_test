@@ -78,7 +78,8 @@ Telegram bot that generates affiliate links for AliExpress products. Users send 
   external application database
 - `DATABASE_URL`: Fallback PostgreSQL connection string
 - `PORT`: Server port (default 5000)
-- `RENDER_EXTERNAL_URL`: Render external URL for webhook setup
+- `PUBLIC_URL`: Public HTTPS URL for webhook setup; `RENDER_EXTERNAL_URL` and
+  `RAILWAY_PUBLIC_DOMAIN` are supported as fallbacks
 - `GEMINI_API_KEY`: Gemini API key for channel analysis and natural-language offer search
 - `GEMINI_MODEL`: Optional Gemini model name (default: `gemini-flash-latest`)
 - `TELEGRAM_API_ID`: Telegram API ID for the dedicated monitoring account

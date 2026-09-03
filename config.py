@@ -9,6 +9,16 @@ TOKEN = os.getenv('TELEGRAM_TOKEN')
 DATABASE_URL = os.getenv('EXTERNAL_DATABASE_URL') or os.getenv('DATABASE_URL')
 PORT = int(os.getenv('PORT', 5000))
 RENDER_EXTERNAL_URL = os.getenv('RENDER_EXTERNAL_URL', '')
+RAILWAY_PUBLIC_DOMAIN = os.getenv('RAILWAY_PUBLIC_DOMAIN', '')
+PUBLIC_URL = (
+    os.getenv('PUBLIC_URL')
+    or RENDER_EXTERNAL_URL
+    or (
+        f"https://{RAILWAY_PUBLIC_DOMAIN}"
+        if RAILWAY_PUBLIC_DOMAIN
+        else ''
+    )
+).rstrip('/')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash-lite')
 TELEGRAM_API_ID = int(os.getenv('TELEGRAM_API_ID', '0') or 0)

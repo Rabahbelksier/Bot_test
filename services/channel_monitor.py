@@ -249,10 +249,12 @@ class ChannelMonitor:
             channel_id,
             ids=message_id,
         )
-        if not source_message or not getattr(source_message, "photo", None):
+        if not source_message or not getattr(source_message, "media", None):
             return None
         buffer = io.BytesIO()
-        await self.client.download_media(source_message, file=buffer)
+        downloaded = await self.client.download_media(source_message, file=buffer)
+        if not downloaded or not buffer.tell():
+            return None
         buffer.seek(0)
         return buffer
 
