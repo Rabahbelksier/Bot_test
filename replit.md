@@ -80,6 +80,9 @@ Telegram bot that generates affiliate links for AliExpress products. Users send 
 - `PORT`: Server port (default 5000)
 - `PUBLIC_URL`: Public HTTPS URL for webhook setup; `RENDER_EXTERNAL_URL` and
   `RAILWAY_PUBLIC_DOMAIN` are supported as fallbacks
+- `CHANNEL_MONITOR_ENABLED`: Optional switch for MTProto channel monitoring.
+  It defaults on outside Replit and off in the Replit workspace to prevent
+  sharing one Telethon session across workers. Set it explicitly when needed.
 - `GEMINI_API_KEY`: Gemini API key for channel analysis and natural-language offer search
 - `GEMINI_MODEL`: Optional Gemini model name (default: `gemini-flash-latest`)
 - `TELEGRAM_API_ID`: Telegram API ID for the dedicated monitoring account

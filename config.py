@@ -19,6 +19,13 @@ PUBLIC_URL = (
         else ''
     )
 ).rstrip('/')
+_channel_monitor_setting = os.getenv('CHANNEL_MONITOR_ENABLED')
+_running_on_replit = bool(os.getenv('REPLIT_ENVIRONMENT') or os.getenv('REPL_ID'))
+CHANNEL_MONITOR_ENABLED = (
+    _channel_monitor_setting.strip().lower() in {'1', 'true', 'yes', 'on'}
+    if _channel_monitor_setting is not None
+    else not _running_on_replit
+)
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash-lite')
 TELEGRAM_API_ID = int(os.getenv('TELEGRAM_API_ID', '0') or 0)

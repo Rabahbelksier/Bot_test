@@ -13,7 +13,7 @@ from telegram.ext import (
     filters,
 )
 
-from config import PUBLIC_URL, TOKEN, PORT
+from config import CHANNEL_MONITOR_ENABLED, PUBLIC_URL, TOKEN, PORT
 from core.db import init_db
 from handlers.help import help_command, help_topic_callback
 from handlers.start import start
@@ -105,11 +105,17 @@ def _ensure_ready():
         except Exception:
             logger.exception("Failed to configure Telegram command menu")
         telegram_app.bot_data["channel_monitor"] = channel_monitor
-        try:
-            f = asyncio.run_coroutine_threadsafe(channel_monitor.start(), _loop)
-            f.result(timeout=30)
-        except Exception:
-            logger.exception("Channel monitor could not be started")
+        if CHANNEL_MONITOR_ENABLED:
+            try:
+                f = asyncio.run_coroutine_threadsafe(channel_monitor.start(), _loop)
+                f.result(timeout=30)
+            except Exception:
+                logger.exception("Channel monitor could not be started")
+        else:
+            logger.info(
+                "Channel monitor is disabled in this environment; set "
+                "CHANNEL_MONITOR_ENABLED=true to enable it"
+            )
         _initialized = True
         logger.info("Telegram app ready in worker process")
         return _loop
