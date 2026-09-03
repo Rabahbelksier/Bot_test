@@ -305,7 +305,11 @@ async def _replace_stored_post_message(query, context, post, has_previous, has_n
             reply_markup=navigation,
         )
         if getattr(edited, "photo", None):
-            await _cache_photo_file_id(post["id"], edited.photo[-1].file_id)
+            if downloaded_source or not post.get("photo_file_id"):
+                await _cache_photo_file_id(
+                    post["id"],
+                    edited.photo[-1].file_id,
+                )
     elif not photo and not getattr(message, "photo", None):
         chunks = _split_text(content)
         await bot.edit_message_text(

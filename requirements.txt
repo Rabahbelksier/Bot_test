@@ -7,4 +7,3 @@ cachetools
 telethon
 qrcode
 python-telegram-bot
-telegram

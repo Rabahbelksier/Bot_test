@@ -135,6 +135,7 @@ class AiSearchTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_search_keeps_complete_results_for_fast_navigation(self):
         context = FakeContext()
+        context.user_data["ai_search_active"] = True
         message = FakeMessage("أرخص الهواتف")
         posts = [
             {"id": 1, "title": "هاتف أول"},
