@@ -56,6 +56,7 @@ _CATEGORY_ALIASES = {
 _SEARCH_TOKEN_PATTERN = re.compile(r"[\w\u0600-\u06ff]+", re.UNICODE)
 _FUZZY_TOKEN_THRESHOLD = 0.72
 _SEARCH_CANDIDATE_LIMIT = 500
+_MAX_TRENDING_RESULTS = 10
 _CATEGORY_BRANDS = {
     "phones": {
         "iphone",
@@ -351,31 +352,68 @@ def search_channel_posts(intent, limit=10):
         conditions.append("price <= %s")
         params.append(max_price)
 
-    if request_type == "trending":
-        ordering = (
-            "COUNT(*) OVER (PARTITION BY COALESCE(aliexpress_product_id, title)) DESC, "
-            "published_at DESC NULLS LAST"
-        )
-    else:
-        ordering = "published_at DESC NULLS LAST"
-
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            cursor.execute(
-                f"""
-                SELECT id, title, price, content, processing_status,
-                       source_link, published_at, photo_file_id,
-                       source_channel_id, source_message_id,
-                       aliexpress_product_id
-                FROM statu
-                WHERE {' AND '.join(conditions)}
-                ORDER BY {ordering}
-                LIMIT %s
-                """,
-                [*params, _SEARCH_CANDIDATE_LIMIT],
-            )
+            if request_type == "trending":
+                # Return one representative offer per product. The product
+                # with the most occurrences comes first, and its cheapest
+                # processed offer is the representative shown to the user.
+                product_key = (
+                    "COALESCE("
+                    "NULLIF(aliexpress_product_id, ''), "
+                    "NULLIF(LOWER(TRIM(title)), ''), "
+                    "'post:' || id::text"
+                    ")"
+                )
+                cursor.execute(
+                    f"""
+                    WITH ranked_posts AS (
+                        SELECT id, title, price, content, processing_status,
+                               source_link, published_at, photo_file_id,
+                               source_channel_id, source_message_id,
+                               aliexpress_product_id,
+                               COUNT(*) OVER (
+                                   PARTITION BY {product_key}
+                               ) AS product_occurrences,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY {product_key}
+                                   ORDER BY price ASC NULLS LAST,
+                                            published_at DESC NULLS LAST,
+                                            id DESC
+                               ) AS product_rank
+                        FROM statu
+                        WHERE {' AND '.join(conditions)}
+                    )
+                    SELECT id, title, price, content, processing_status,
+                           source_link, published_at, photo_file_id,
+                           source_channel_id, source_message_id,
+                           aliexpress_product_id
+                    FROM ranked_posts
+                    WHERE product_rank = 1
+                    ORDER BY product_occurrences DESC,
+                             price ASC NULLS LAST,
+                             published_at DESC NULLS LAST,
+                             id DESC
+                    LIMIT %s
+                    """,
+                    [*params, max(1, min(int(limit), _MAX_TRENDING_RESULTS))],
+                )
+            else:
+                cursor.execute(
+                    f"""
+                    SELECT id, title, price, content, processing_status,
+                           source_link, published_at, photo_file_id,
+                           source_channel_id, source_message_id,
+                           aliexpress_product_id
+                    FROM statu
+                    WHERE {' AND '.join(conditions)}
+                    ORDER BY published_at DESC NULLS LAST
+                    LIMIT %s
+                    """,
+                    [*params, _SEARCH_CANDIDATE_LIMIT],
+                )
             columns = [description[0] for description in cursor.description]
             posts = [dict(zip(columns, row)) for row in cursor.fetchall()]
     finally:
@@ -383,7 +421,7 @@ def search_channel_posts(intent, limit=10):
             conn.close()
 
     if request_type == "trending":
-        return posts[: max(1, min(int(limit), 20))]
+        return posts[: max(1, min(int(limit), _MAX_TRENDING_RESULTS))]
 
     ranked_posts = []
     for position, post in enumerate(posts):

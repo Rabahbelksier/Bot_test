@@ -61,6 +61,15 @@ async def process_channel_message(
         logger.warning("Ignoring channel post without source identifiers")
         return None
 
+    urls = extract_aliexpress_urls(text)
+    if not urls:
+        logger.info(
+            "Skipping channel post %s/%s because it has no AliExpress link",
+            channel_id,
+            message_id,
+        )
+        return None
+
     source_link = build_source_link(channel_username, message_id, channel_id)
     photo_file_id = getattr(message, "photo_file_id", None)
     post_id = create_channel_post(
@@ -84,8 +93,7 @@ async def process_channel_message(
             )
             return post_id
 
-        urls = extract_aliexpress_urls(text)
-        replacements = await _generate_affiliate_replacements(urls) if urls else {}
+        replacements = await _generate_affiliate_replacements(urls)
         modified_text = rewrite_post_text(text, replacements)
         product_id = (
             await asyncio.to_thread(extract_product_id, urls[0])

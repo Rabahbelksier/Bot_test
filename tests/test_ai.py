@@ -10,17 +10,19 @@ class AiParsingTests(unittest.TestCase):
     def test_normalizes_channel_offer_analysis(self, call_gemini):
         call_gemini.return_value = {
             "is_offer": True,
-            "title": "  هاتف تجريبي  ",
+            "title": "  POCO C85 6/128GB Batterie 5000mAh - عرض كامل  ",
             "discounted_price": "12,50",
         }
         self.assertEqual(
-            analyze_channel_post("هاتف بسعر 12.50$"),
+            analyze_channel_post("POCO C85 6/128GB Batterie 5000mAh بسعر 12.50$"),
             {
                 "is_offer": True,
-                "title": "هاتف تجريبي",
+                "title": "POCO C85 6/128GB Batterie 5000mAh - عرض كامل",
                 "price": 12.5,
             },
         )
+        prompt = call_gemini.call_args.args[0]
+        self.assertIn("العنوان الكامل", prompt)
 
     @patch("core.ai._call_gemini")
     def test_normalizes_user_search_request(self, call_gemini):

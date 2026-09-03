@@ -1,8 +1,10 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from core.channel_processor import (
     build_source_link,
+    process_channel_message,
     rewrite_post_text,
 )
 
@@ -55,6 +57,29 @@ class ChannelProcessorAffiliateTests(unittest.IsolatedAsyncioTestCase):
                 "https://a.aliexpress.com/two": "affiliate:two",
             },
         )
+
+    @patch("core.channel_processor.analyze_channel_post")
+    @patch("core.channel_processor.create_channel_post")
+    @patch("core.channel_processor.extract_aliexpress_urls", return_value=[])
+    async def test_skips_posts_without_aliexpress_links(
+        self,
+        extract_urls,
+        create_post,
+        analyze,
+    ):
+        result = await process_channel_message(
+            SimpleNamespace(
+                message="إعلان عام بدون رابط شراء",
+                raw_text="إعلان عام بدون رابط شراء",
+                id=42,
+            ),
+            channel_id=-100123,
+        )
+
+        self.assertIsNone(result)
+        extract_urls.assert_called_once()
+        create_post.assert_not_called()
+        analyze.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -210,7 +210,9 @@ def analyze_channel_post(text):
 
 المطلوب:
 - is_offer: true فقط إذا كان المنشور عرضًا حقيقيًا على منتج.
-    - title: اسم المنتج المختصر مع نوعه عند الإمكان، مثل "هاتف iPhone 15"، أو null.
+    - title: العنوان الكامل للمنتج كما ورد في المنشور، مع كل التفاصيل مثل
+      الموديل، الذاكرة، البطارية، اللون، المقاس والإصدار. لا تختصر العنوان
+      إلى اسم المنتج فقط ولا تترجم أو تعيد صياغة التفاصيل، أو null.
 - discounted_price: السعر النهائي بعد التخفيض بالدولار، أو null.
 - Ignore posts that are announcements, general news, coupon-only posts,
   or do not describe a specific product offer.
@@ -226,7 +228,7 @@ def analyze_channel_post(text):
     result = _call_gemini(prompt)
     return {
         "is_offer": bool(result.get("is_offer")),
-        "title": str(result.get("title")).strip()[:500]
+        "title": str(result.get("title")).strip()[:1000]
         if result.get("title")
         else None,
         "price": _coerce_price(result.get("discounted_price")),

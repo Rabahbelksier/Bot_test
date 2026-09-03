@@ -41,12 +41,14 @@ AI_SEARCH_SUPPORTED_TEXT = """هذه الأداة تدعم البحث عن:
 • منتج معين بأرخص سعر
 • منتج معين ضمن نطاق سعري
 • العروض الرائجة أو المتكررة اليوم"""
+AI_SEARCH_LOADING_TEXT = "⏳ جاري تجهيز طلبك..."
 
 
 def _clear_ai_search_state(context):
     context.user_data.pop("ai_search_active", None)
     context.user_data.pop("ai_search_results", None)
     context.user_data.pop("ai_search_index", None)
+    context.user_data.pop("restore_ai_search_keyboard", None)
 
 
 def _navigation_lock(context):
@@ -85,6 +87,17 @@ async def _activate_ai_search(message, context):
 def _restore_ai_search_keyboard(context):
     """Ask the next normal-mode reply to restore the persistent keyboard."""
     context.user_data["restore_ai_search_keyboard"] = True
+
+
+async def _delete_message_if_possible(message, context, chat_id):
+    message_id = getattr(message, "message_id", None)
+    bot = getattr(context, "bot", None)
+    if not message_id or not bot:
+        return
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        logger.debug("Could not delete temporary AI search message", exc_info=True)
 
 
 async def _cache_photo_file_id(post_id, photo_file_id):
@@ -370,53 +383,58 @@ async def handle_ai_search_message(update: Update, context: ContextTypes.DEFAULT
         _restore_ai_search_keyboard(context)
         return False
 
+    loading_message = await update.effective_message.reply_text(AI_SEARCH_LOADING_TEXT)
     try:
-        intent = await asyncio.to_thread(parse_user_request, text)
-    except GeminiError:
-        logger.exception("AI search request failed")
-        await update.effective_message.reply_text(
-            "تعذر تشغيل البحث بالذكاء الاصطناعي حاليًا، حاول مرة أخرى لاحقًا."
-        )
-        return True
-    except Exception:
-        logger.exception("Unexpected AI search error")
-        await update.effective_message.reply_text(
-            "حدث خطأ أثناء فهم طلب البحث."
-        )
-        return True
+        try:
+            intent = await asyncio.to_thread(parse_user_request, text)
+        except GeminiError:
+            logger.exception("AI search request failed")
+            await update.effective_message.reply_text(
+                "تعذر تشغيل البحث بالذكاء الاصطناعي حاليًا، حاول مرة أخرى لاحقًا."
+            )
+            return True
+        except Exception:
+            logger.exception("Unexpected AI search error")
+            await update.effective_message.reply_text(
+                "حدث خطأ أثناء فهم طلب البحث."
+            )
+            return True
 
-    if intent["request_type"] == "unsupported":
-        await update.effective_message.reply_text(AI_SEARCH_SUPPORTED_TEXT)
-        return True
+        if intent["request_type"] == "unsupported":
+            await update.effective_message.reply_text(AI_SEARCH_SUPPORTED_TEXT)
+            return True
 
-    try:
-        posts = await asyncio.to_thread(search_channel_posts, intent)
-    except Exception:
-        logger.exception("AI search database query failed")
-        await update.effective_message.reply_text(
-            "تعذر الوصول إلى العروض المحفوظة حاليًا، حاول مرة أخرى لاحقًا."
+        try:
+            posts = await asyncio.to_thread(search_channel_posts, intent)
+        except Exception:
+            logger.exception("AI search database query failed")
+            await update.effective_message.reply_text(
+                "تعذر الوصول إلى العروض المحفوظة حاليًا، حاول مرة أخرى لاحقًا."
+            )
+            return True
+        if not posts:
+            await update.effective_message.reply_text(
+                "لم أجد عروضًا محفوظة تطابق طلبك. حاول تغيير اسم المنتج أو نطاق السعر."
+            )
+            return True
+
+        # Keep the ranked posts in memory for the whole search session.
+        context.user_data["ai_search_results"] = posts
+        context.user_data["ai_search_index"] = 0
+        await send_stored_post(
+            update.effective_chat.id,
+            context,
+            posts[0],
+            has_previous=False,
+            has_next=len(posts) > 1,
         )
         return True
-    if not posts:
-        await update.effective_message.reply_text(
-            "لم أجد عروضًا محفوظة تطابق طلبك. حاول تغيير اسم المنتج أو نطاق السعر."
+    finally:
+        await _delete_message_if_possible(
+            loading_message,
+            context,
+            update.effective_chat.id,
         )
-        return True
-
-    # Keep the ranked posts in memory for the whole search session. Re-reading
-    # each result by id made every navigation click wait for a new DB
-    # connection, and could also fail when the retention cleanup ran between
-    # the search and a later click.
-    context.user_data["ai_search_results"] = posts
-    context.user_data["ai_search_index"] = 0
-    await send_stored_post(
-        update.effective_chat.id,
-        context,
-        posts[0],
-        has_previous=False,
-        has_next=len(posts) > 1,
-    )
-    return True
 
 
 async def _navigate_ai_results(update, context, direction):

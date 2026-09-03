@@ -159,6 +159,7 @@ class AiSearchTests(unittest.IsolatedAsyncioTestCase):
             handled = await handle_ai_search_message(update, context)
 
         self.assertTrue(handled)
+        self.assertEqual(message.replies[0][0], "⏳ جاري تجهيز طلبك...")
         self.assertEqual(context.user_data["ai_search_results"], posts)
         self.assertEqual(context.user_data["ai_search_index"], 0)
         send_post.assert_awaited_once_with(
@@ -299,6 +300,42 @@ class DatabaseSearchTests(unittest.TestCase):
         query, params = cursor.execute.call_args.args
         self.assertNotIn("content ILIKE", query)
         self.assertEqual(params, [500])
+
+    @patch.object(db, "DATABASE_URL", "postgres://test")
+    @patch.object(db, "get_db_connection")
+    def test_trending_search_returns_one_cheapest_offer_per_product(
+        self,
+        get_connection,
+    ):
+        connection = get_connection.return_value
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.description = [
+            (name,) for name in (
+                "id",
+                "title",
+                "price",
+                "content",
+                "processing_status",
+                "source_link",
+                "published_at",
+                "photo_file_id",
+                "source_channel_id",
+                "source_message_id",
+                "aliexpress_product_id",
+            )
+        ]
+        cursor.fetchall.return_value = []
+
+        self.assertEqual(
+            db.search_channel_posts({"request_type": "trending"}, limit=50),
+            [],
+        )
+
+        query, params = cursor.execute.call_args.args
+        self.assertIn("ROW_NUMBER()", query)
+        self.assertIn("WHERE product_rank = 1", query)
+        self.assertIn("product_occurrences DESC", query)
+        self.assertEqual(params, [10])
 
     @patch.object(db, "DATABASE_URL", "postgres://test")
     @patch.object(db, "get_db_connection")

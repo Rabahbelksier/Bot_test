@@ -20,14 +20,27 @@ async def process_link_for_user(chat_id: int, url: str, context):
         False,
     )
     reply_keyboard = ai_search_reply_keyboard() if restore_ai_keyboard else None
+    keyboard_was_restored = False
+    loading_msg = None
 
-    product_id = await asyncio.to_thread(extract_product_id, url)
+    try:
+        product_id = await asyncio.to_thread(extract_product_id, url)
+    except Exception:
+        logger.exception("Could not extract the product id from %s", url)
+        await bot.send_message(
+            chat_id=chat_id,
+            text="❌ تعذر قراءة رابط المنتج، حاول إرسال الرابط مرة أخرى.",
+            reply_markup=reply_keyboard,
+        )
+        keyboard_was_restored = bool(reply_keyboard)
+        return
     if not product_id:
         await bot.send_message(
             chat_id=chat_id,
             text="❌ انسخ رابط المنتج من تطبيق aliexpress او الموقع",
             reply_markup=reply_keyboard,
         )
+        keyboard_was_restored = bool(reply_keyboard)
         return
 
     loading_msg = await bot.send_message(
@@ -110,6 +123,19 @@ async def process_link_for_user(chat_id: int, url: str, context):
 
     finally:
         try:
-            await bot.delete_message(chat_id=chat_id, message_id=loading_msg.message_id)
+            if loading_msg:
+                await bot.delete_message(
+                    chat_id=chat_id,
+                    message_id=loading_msg.message_id,
+                )
         except Exception:
             pass
+        if reply_keyboard and not keyboard_was_restored:
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text="عاد البوت إلى الوضع العادي، ويمكنك استخدام زر «اسأل الذكاء الاصطناعي».",
+                    reply_markup=reply_keyboard,
+                )
+            except Exception:
+                logger.exception("Could not restore the AI search keyboard")
