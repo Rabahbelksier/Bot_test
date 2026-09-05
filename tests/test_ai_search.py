@@ -375,6 +375,63 @@ class DatabaseSearchTests(unittest.TestCase):
 
     @patch.object(db, "DATABASE_URL", "postgres://test")
     @patch.object(db, "get_db_connection")
+    def test_filtered_trending_search_applies_category_before_grouping(
+        self,
+        get_connection,
+    ):
+        connection = get_connection.return_value
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.description = [
+            (name,) for name in (
+                "id",
+                "title",
+                "price",
+                "content",
+                "processing_status",
+                "source_link",
+                "published_at",
+                "photo_file_id",
+                "source_channel_id",
+                "source_message_id",
+                "aliexpress_product_id",
+            )
+        ]
+        cursor.fetchall.return_value = [
+            (
+                1, "iPhone 15 Pro 256GB", 500, "phone", "processed",
+                "phone-1", None, None, None, None, "phone-1",
+            ),
+            (
+                2, "iPhone 15 Pro 256GB", 450, "phone", "processed",
+                "phone-2", None, None, None, None, "phone-1",
+            ),
+            (
+                3, "UGREEN USB-C Charging Cable for Huawei Phones", 5,
+                "cable", "processed", "cable-1", None, None, None, None,
+                "cable-1",
+            ),
+            (
+                4, "Bluetooth Earbuds", 20, "audio", "processed",
+                "audio-1", None, None, None, None, "audio-1",
+            ),
+        ]
+
+        result = db.search_channel_posts(
+            {
+                "request_type": "trending",
+                "category": "phones",
+                "keywords": ["هواتف", "phones"],
+            },
+            limit=10,
+        )
+
+        self.assertEqual([post["id"] for post in result], [2])
+        query, params = cursor.execute.call_args.args
+        self.assertNotIn("ROW_NUMBER()", query)
+        self.assertEqual(params, [500])
+
+    @patch.object(db, "DATABASE_URL", "postgres://test")
+    @patch.object(db, "get_db_connection")
     def test_cleanup_uses_three_day_retention_window(self, get_connection):
         connection = get_connection.return_value
         cursor = connection.cursor.return_value.__enter__.return_value

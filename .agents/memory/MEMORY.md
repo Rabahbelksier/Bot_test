@@ -2,3 +2,4 @@
 - [Gemini quota handling](gemini-quota-handling.md) — model quotas can differ; switch models on 429 instead of retrying one exhausted model indefinitely.
 - [Telethon session exclusivity](telethon-session-exclusivity.md) — one StringSession cannot safely serve workers from different IP addresses.
 - [Python package setup](python-package-setup.md) — package installation can rewrite dependency files and workspace state; re-check the diff before finalizing code changes.
+- [AI intent composition](ai-intent-composition.md) — keep the primary search goal and all explicit category, product, price, and specification filters together.

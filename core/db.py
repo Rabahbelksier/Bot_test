@@ -353,11 +353,24 @@ def search_channel_posts(intent, limit=10):
         conditions.append("price <= %s")
         params.append(max_price)
 
+    trending_has_content_filters = (
+        request_type == "trending"
+        and bool(
+            intent.get("category")
+            or intent.get("required_specs")
+            or _infer_category(None, keywords)
+            or any(
+                keyword.casefold() not in _GENERIC_PRODUCT_KEYWORDS
+                for keyword in keywords
+            )
+        )
+    )
+
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            if request_type == "trending":
+            if request_type == "trending" and not trending_has_content_filters:
                 # Return one representative offer per product. The product
                 # with the most occurrences comes first, and its cheapest
                 # processed offer is the representative shown to the user.
@@ -422,6 +435,13 @@ def search_channel_posts(intent, limit=10):
             conn.close()
 
     if request_type == "trending":
+        if trending_has_content_filters:
+            return _rank_filtered_trending_posts(
+                posts,
+                intent,
+                keywords,
+                limit,
+            )
         return posts[: max(1, min(int(limit), _MAX_TRENDING_RESULTS))]
 
     ranked_posts = []
@@ -651,7 +671,77 @@ def _post_match_score(post, intent, keywords):
             keywords,
             post.get("title"),
         )
+    if request_type == "trending":
+        category = _infer_category(intent.get("category"), keywords)
+        score = 1.0
+        if category:
+            category_score = _category_score(
+                category,
+                keywords,
+                post.get("title"),
+            )
+            if category_score is None:
+                return None
+            score *= category_score
+
+        specific_keywords = [
+            keyword
+            for keyword in keywords
+            if keyword.casefold() not in _GENERIC_PRODUCT_KEYWORDS
+        ]
+        if specific_keywords:
+            product_score = _specific_product_score(
+                specific_keywords,
+                post.get("title"),
+            )
+            if product_score is None:
+                return None
+            score *= product_score
+        return score
     return 1.0
+
+
+def _rank_filtered_trending_posts(posts, intent, keywords, limit):
+    """Apply semantic filters before grouping trending product offers."""
+    groups = {}
+    for position, post in enumerate(posts):
+        if _post_match_score(post, intent, keywords) is None:
+            continue
+        product_key = (
+            post.get("aliexpress_product_id")
+            or _normalize_search_text(post.get("title"))
+            or f"post:{post.get('id', position)}"
+        )
+        groups.setdefault(product_key, []).append(post)
+
+    representatives = []
+    for group in groups.values():
+        representative = min(
+            group,
+            key=lambda post: (
+                post.get("price") is None,
+                post.get("price") if post.get("price") is not None else 0,
+                -(post.get("id") or 0),
+            ),
+        )
+        representatives.append((len(group), representative))
+
+    representatives.sort(
+        key=lambda item: (
+            -item[0],
+            item[1].get("price") is None,
+            item[1].get("price")
+            if item[1].get("price") is not None
+            else 0,
+            -(item[1].get("id") or 0),
+        )
+    )
+    return [
+        post
+        for _, post in representatives[
+            : max(1, min(int(limit), _MAX_TRENDING_RESULTS))
+        ]
+    ]
 
 
 def save_channel_photo_file_id(post_id, photo_file_id):

@@ -448,6 +448,11 @@ def _infer_request_category(keywords):
     return None
 
 
+def _infer_request_category_from_text(text):
+    words = re.findall(r"[\w\u0600-\u06ff]+", str(text or "").casefold())
+    return _infer_request_category(words)
+
+
 def _normalize_user_request_result(result, text):
     """Validate the model output before it becomes a database search."""
     if not isinstance(result, dict):
@@ -469,6 +474,11 @@ def _normalize_user_request_result(result, text):
     category = result.get("category")
     if category not in _REQUEST_CATEGORIES:
         category = None
+    if category is None:
+        category = (
+            _infer_request_category(keywords)
+            or _infer_request_category_from_text(text)
+        )
 
     min_price = _coerce_price(result.get("min_price"))
     max_price = _coerce_price(result.get("max_price"))
@@ -491,11 +501,9 @@ def _normalize_user_request_result(result, text):
         if not _has_specific_product_keyword(keywords):
             request_type = "unsupported"
     elif request_type == "trending":
-        keywords = []
-        category = None
-        min_price = None
-        max_price = None
-        required_specs = []
+        # Trending is the primary goal; category, product, price, and
+        # specification values remain active as additional filters.
+        pass
     elif request_type == "unsupported":
         keywords = []
         category = None
@@ -574,16 +582,22 @@ def parse_user_request(text):
 - unsupported: أي طلب خارج هذه الأنواع
 
 قواعد تحديد النوع:
+- حلل الرسالة على مرحلتين مستقلتين: حدد الهدف الرئيسي أولًا، ثم استخرج
+  كل الفلاتر والقيود الإضافية. لا تجعل كلمة واحدة تلغي بقية المعنى.
 - إذا ذكر المستخدم موديلًا أو اسم منتج محددًا، فاستعمل نوع product_* حتى
-  لو ذكر فئة المنتج أيضًا.
+  لو ذكر فئة المنتج أيضًا، واحتفظ بالفئة والمواصفات والسعر كفلاتر إضافية.
 - product_best لطلب أفضل عرض عام لمنتج محدد.
 - product_cheapest عندما يطلب الأرخص أو أقل سعر لمنتج محدد.
 - product_price_range عندما يحدد سعرًا أدنى أو أعلى لمنتج محدد.
 - category_cheapest عندما يطلب أرخص منتج/عرض داخل فئة فقط، وليس أفضل منتج
   من حيث الجودة أو المواصفات.
 - category_price_range عندما يطلب منتجات فئة ضمن حد أو نطاق سعري.
-- trending فقط عند طلب العروض الرائجة أو الأكثر تكرارًا. لا تستخدمه لمجرد
-  أن المستخدم قال "اليوم".
+- trending فقط عند طلب العروض الرائجة أو الأكثر تكرارًا. يمكن أن يصاحبه
+  category أو اسم منتج أو مواصفات أو نطاق سعر، ويجب الاحتفاظ بهذه القيود.
+  مثال: "العروض الرائجة اليوم على الهواتف فقط" يعني trending مع
+  category=phones، وليس trending عامًا.
+- كلمات مثل "فقط"، "حصريًا"، "بشرط"، "يجب أن"، "ضمن"، "أقل من"،
+  "أعلى من" و"بدون" تغيّر شروط البحث ولا يجوز تجاهلها.
 - الطلبات عن الشحن، المخزون، البائع، التقييمات، المقارنة بين منتجات،
   التوصية الشخصية، إنشاء نص، أو أي إجراء لا يبحث في العروض المحفوظة هي
   unsupported.
@@ -623,6 +637,8 @@ phones, headphones, tablets, laptops, watches, cameras, gaming, home, other
 - "أحتاج هاتفًا للاستخدام اليومي، ميزانيتي بين 100 و200 دولار، اعرض الأرخص"
   => category_price_range، category=phones.
 - "ما هي أكثر العروض تكرارًا ورواجًا عندكم؟" => trending.
+- "أريد العروض الرائجة اليوم على الهواتف فقط" => trending مع
+  category=phones.
 - "قارن بين هاتفين وقل لي أيهما أفضل من ناحية الكاميرا" => unsupported.
 
 طلب المستخدم:

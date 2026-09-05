@@ -37,7 +37,7 @@ class AiParsingTests(unittest.TestCase):
             {
                 "request_type": "category_price_range",
                 "keywords": ["هواتف", "phones"],
-                "category": None,
+                "category": "phones",
                 "min_price": 50.0,
                 "max_price": 100.0,
                 "required_specs": [],
@@ -113,6 +113,22 @@ class AiParsingTests(unittest.TestCase):
             ],
         )
         self.assertIn("required_specs", call_gemini.call_args.args[0])
+
+    @patch("core.ai._call_gemini")
+    def test_preserves_category_filter_for_trending_requests(self, call_gemini):
+        call_gemini.return_value = {
+            "request_type": "trending",
+            "keywords": ["هواتف", "phones"],
+            "category": "phones",
+        }
+
+        result = parse_user_request(
+            "اريد العروض الرائجة اليوم على الهواتف فقط"
+        )
+
+        self.assertEqual(result["request_type"], "trending")
+        self.assertEqual(result["category"], "phones")
+        self.assertEqual(result["keywords"], ["هواتف", "phones"])
 
     @patch("core.ai._call_gemini")
     def test_swaps_reversed_price_range(self, call_gemini):
