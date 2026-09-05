@@ -170,6 +170,42 @@ class AiSearchTests(unittest.IsolatedAsyncioTestCase):
             has_next=True,
         )
 
+    async def test_unsupported_long_request_keeps_existing_supported_message(self):
+        context = FakeContext()
+        context.user_data["ai_search_active"] = True
+        message = FakeMessage(
+            "السلام عليكم، أريد منك مقارنة هاتفين وتحليل الكاميرا والبطارية "
+            "ثم اختيار الأفضل لي حسب استخدامي."
+        )
+        update = SimpleNamespace(
+            effective_message=message,
+            effective_chat=SimpleNamespace(id=123),
+        )
+
+        with patch(
+            "handlers.ai_search.parse_user_request",
+            return_value={
+                "request_type": "unsupported",
+                "keywords": [],
+                "category": None,
+                "min_price": None,
+                "max_price": None,
+            },
+        ), patch(
+            "handlers.ai_search.search_channel_posts",
+            side_effect=AssertionError("unsupported requests must not search"),
+        ):
+            handled = await handle_ai_search_message(update, context)
+
+        self.assertTrue(handled)
+        self.assertEqual(message.replies[-1][0], "هذه الأداة تدعم البحث عن:\n"
+                         "• أفضل عرض على منتج معين\n"
+                         "• أرخص عروض فئة أو نوع معين\n"
+                         "• عروض فئة ضمن سعر محدد\n"
+                         "• منتج معين بأرخص سعر\n"
+                         "• منتج معين ضمن نطاق سعري\n"
+                         "• العروض الرائجة أو المتكررة اليوم")
+
     async def test_next_uses_in_memory_result_without_database_lookup(self):
         context = FakeContext()
         context.user_data["ai_search_results"] = [

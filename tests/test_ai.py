@@ -44,6 +44,46 @@ class AiParsingTests(unittest.TestCase):
         )
 
     @patch("core.ai._call_gemini")
+    def test_keeps_supported_long_request_details_for_model(self, call_gemini):
+        call_gemini.return_value = {
+            "request_type": "product_cheapest",
+            "keywords": ["Samsung S24 Ultra", "256GB"],
+        }
+        long_request = (
+            "السلام عليكم، أبحث عن هاتف مناسب للعمل والتصوير. "
+            + ("شرح إضافي لا يغير الطلب. " * 400)
+            + "المهم أريد Samsung S24 Ultra 256GB بأرخص عرض."
+        )
+
+        result = parse_user_request(long_request)
+
+        self.assertEqual(result["request_type"], "product_cheapest")
+        self.assertEqual(result["keywords"], ["Samsung S24 Ultra", "256GB"])
+        prompt = call_gemini.call_args.args[0]
+        self.assertIn("اقرأ رسالة المستخدم كاملة", prompt)
+        self.assertIn("Samsung S24 Ultra 256GB", prompt)
+        self.assertIn("... [تم اختصار الجزء الأوسط", prompt)
+
+    @patch("core.ai._call_gemini")
+    def test_rejects_incomplete_category_intent(self, call_gemini):
+        call_gemini.return_value = {
+            "request_type": "category_cheapest",
+            "keywords": [],
+            "category": None,
+        }
+
+        self.assertEqual(
+            parse_user_request("أريد أفضل شيء بسعر مناسب"),
+            {
+                "request_type": "unsupported",
+                "keywords": [],
+                "category": None,
+                "min_price": None,
+                "max_price": None,
+            },
+        )
+
+    @patch("core.ai._call_gemini")
     def test_swaps_reversed_price_range(self, call_gemini):
         call_gemini.return_value = {
             "request_type": "product_price_range",
