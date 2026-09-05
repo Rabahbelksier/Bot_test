@@ -560,6 +560,10 @@ def _required_specs_match(title, required_specs):
         return True
 
     title_text = _normalize_search_text(title)
+    compact_title_text = unicodedata.normalize(
+        "NFKC",
+        str(title or ""),
+    ).casefold()
     for spec in required_specs:
         if not isinstance(spec, dict):
             return False
@@ -605,7 +609,7 @@ def _required_specs_match(title, required_specs):
             compact_ram = re.search(
                 rf"{number_pattern}\s*(?:gb|g)?\s*[+/]\s*\d+"
                 rf"\s*(?:gb|g)?\b",
-                title_text,
+                compact_title_text,
             )
             if not compact_ram:
                 return False

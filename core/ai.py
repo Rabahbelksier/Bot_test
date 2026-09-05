@@ -360,7 +360,10 @@ def _normalize_required_specs(value):
         spec = {"type": spec_type, "value": canonical_value}
         if spec not in normalized:
             normalized.append(spec)
-    return normalized[:6]
+    return sorted(
+        normalized[:6],
+        key=lambda spec: {"storage": 0, "ram": 1}.get(spec["type"], 99),
+    )
 
 
 def _extract_required_specs(text):
@@ -375,14 +378,14 @@ def _extract_required_specs(text):
         (
             "ram",
             r"(?:ram|ذاكرة\s*(?:عشوائية|رام)?|رام)"
-            r"\s*(?:الم?:|:|-)?\s*(\d+(?:[.,]\d+)?)\s*"
+            r"\s*(?:[:\-])?\s*(\d+(?:[.,]\d+)?)\s*"
             r"(gb|g|جيجا|غيغا|جيجابايت)?",
         ),
         (
             "storage",
             r"(?:storage|rom|مساحة\s*التخزين|مساحة\s*تخزين|التخزين|"
             r"ذاكرة\s*داخلية)"
-            r"\s*(?:الم?:|:|-)?\s*(\d+(?:[.,]\d+)?)\s*"
+            r"\s*(?:[:\-])?\s*(\d+(?:[.,]\d+)?)\s*"
             r"(gb|g|tb|t|جيجا|غيغا|جيجابايت|تيرا)?",
         ),
     )
@@ -417,7 +420,10 @@ def _extract_required_specs(text):
                 spec = {"type": spec_type, "value": value}
                 if spec not in specs:
                     specs.append(spec)
-    return specs[:6]
+    return sorted(
+        specs[:6],
+        key=lambda spec: {"storage": 0, "ram": 1}.get(spec["type"], 99),
+    )
 
 
 def _has_specific_product_keyword(keywords):
@@ -456,7 +462,10 @@ def _normalize_user_request_result(result, text):
     for spec in _extract_required_specs(text):
         if spec not in required_specs:
             required_specs.append(spec)
-    required_specs = required_specs[:6]
+    required_specs = sorted(
+        required_specs[:6],
+        key=lambda spec: {"storage": 0, "ram": 1}.get(spec["type"], 99),
+    )
     category = result.get("category")
     if category not in _REQUEST_CATEGORIES:
         category = None
