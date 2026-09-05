@@ -68,7 +68,8 @@ _CATEGORY_BRANDS = {
 _ACCESSORY_OR_CONFLICT_TERMS = {
     "watch", "watches", "smartwatch", "tablet", "tablets",
     "headphone", "headphones", "earphone", "earphones", "earbuds",
-    "headset", "adapter", "charger", "case", "cover", "سماعة",
+    "headset", "adapter", "charger", "case", "cover", "cable", "cord",
+    "usb", "charging", "power", "hub", "سلك", "كابل", "سماعة",
     "سماعات", "ساعة", "ساعات", "تابلت", "شاحن", "شواحن",
     "جراب", "أغطية",
 }
@@ -514,6 +515,15 @@ def _category_score(category, keywords, title):
     if not title_tokens:
         return None
 
+    if category == "phones" and title_tokens.intersection(
+        {
+            token
+            for term in _ACCESSORY_OR_CONFLICT_TERMS
+            for token in _search_tokens(term)
+        }
+    ):
+        return None
+
     category_terms = _CATEGORY_ALIASES.get(category)
     if category_terms is None:
         category_terms = set(keywords)
@@ -544,6 +554,64 @@ def _category_score(category, keywords, title):
     return None
 
 
+def _required_specs_match(title, required_specs):
+    """Require every explicit RAM/storage condition to appear in the title."""
+    if not required_specs:
+        return True
+
+    title_text = _normalize_search_text(title)
+    for spec in required_specs:
+        if not isinstance(spec, dict):
+            return False
+        spec_type = str(spec.get("type") or "").casefold()
+        value = str(spec.get("value") or "").casefold()
+        match = re.search(r"(\d+(?:\.\d+)?)(gb|tb|g|t)?", value)
+        if not match:
+            return False
+        number = match.group(1)
+        unit = match.group(2) or "gb"
+        unit_aliases = {
+            "gb": r"(?:gb|g|جيجا|جيجابايت)",
+            "g": r"(?:gb|g|جيجا|جيجابايت)",
+            "tb": r"(?:tb|t|تيرا)",
+            "t": r"(?:tb|t|تيرا)",
+        }
+        unit_pattern = unit_aliases.get(unit, r"(?:gb|g|tb|t)")
+        number_pattern = rf"(?<!\d){re.escape(number)}(?:\.0)?"
+
+        if spec_type == "storage":
+            if not re.search(
+                rf"{number_pattern}\s*{unit_pattern}\b",
+                title_text,
+            ):
+                return False
+            continue
+
+        if spec_type != "ram":
+            return False
+
+        ram_before = re.search(
+            rf"(?:ram|ذاكرة\s*عشوائية|رام)\s*[:+\-/]?\s*"
+            rf"{number_pattern}\s*{unit_pattern}?\b",
+            title_text,
+        )
+        ram_after = re.search(
+            rf"{number_pattern}\s*{unit_pattern}?\s*"
+            rf"(?:ram|ذاكرة\s*عشوائية|رام)\b",
+            title_text,
+        )
+        if not ram_before and not ram_after:
+            # Common compact phone-title formats: 12+256GB or 12/256GB.
+            compact_ram = re.search(
+                rf"{number_pattern}\s*(?:gb|g)?\s*[+/]\s*\d+"
+                rf"\s*(?:gb|g)?\b",
+                title_text,
+            )
+            if not compact_ram:
+                return False
+    return True
+
+
 def _infer_category(category, keywords):
     if category in _CATEGORY_ALIASES:
         return category
@@ -566,6 +634,11 @@ def _infer_category(category, keywords):
 
 def _post_match_score(post, intent, keywords):
     request_type = intent.get("request_type")
+    if not _required_specs_match(
+        post.get("title"),
+        intent.get("required_specs", []),
+    ):
+        return None
     if request_type in _PRODUCT_REQUEST_TYPES:
         return _specific_product_score(keywords, post.get("title"))
     if request_type in {"category_cheapest", "category_price_range"}:

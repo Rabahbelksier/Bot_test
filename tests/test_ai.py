@@ -40,6 +40,7 @@ class AiParsingTests(unittest.TestCase):
                 "category": None,
                 "min_price": 50.0,
                 "max_price": 100.0,
+                "required_specs": [],
             },
         )
 
@@ -59,6 +60,10 @@ class AiParsingTests(unittest.TestCase):
 
         self.assertEqual(result["request_type"], "product_cheapest")
         self.assertEqual(result["keywords"], ["Samsung S24 Ultra", "256GB"])
+        self.assertEqual(
+            result["required_specs"],
+            [],
+        )
         prompt = call_gemini.call_args.args[0]
         self.assertIn("اقرأ رسالة المستخدم كاملة", prompt)
         self.assertIn("Samsung S24 Ultra 256GB", prompt)
@@ -80,8 +85,34 @@ class AiParsingTests(unittest.TestCase):
                 "category": None,
                 "min_price": None,
                 "max_price": None,
+                "required_specs": [],
             },
         )
+
+    @patch("core.ai._call_gemini")
+    def test_extracts_storage_and_ram_constraints_from_user_text(self, call_gemini):
+        call_gemini.return_value = {
+            "request_type": "category_price_range",
+            "keywords": ["هواتف", "phones"],
+            "category": "phones",
+            "max_price": 300,
+        }
+
+        result = parse_user_request(
+            "اريد عروض هواتف دات مساحة تخزين 256gb ورام 12gb "
+            "ويجب ان تكون بسعر اقل من 300$"
+        )
+
+        self.assertEqual(result["request_type"], "category_price_range")
+        self.assertEqual(result["max_price"], 300.0)
+        self.assertEqual(
+            result["required_specs"],
+            [
+                {"type": "storage", "value": "256GB"},
+                {"type": "ram", "value": "12GB"},
+            ],
+        )
+        self.assertIn("required_specs", call_gemini.call_args.args[0])
 
     @patch("core.ai._call_gemini")
     def test_swaps_reversed_price_range(self, call_gemini):

@@ -417,6 +417,44 @@ class DatabaseSearchTests(unittest.TestCase):
             )
         )
 
+    def test_category_search_requires_all_explicit_phone_specs(self):
+        from core.db import _post_match_score
+
+        intent = {
+            "request_type": "category_price_range",
+            "category": "phones",
+            "required_specs": [
+                {"type": "storage", "value": "256GB"},
+                {"type": "ram", "value": "12GB"},
+            ],
+        }
+
+        self.assertIsNotNone(
+            _post_match_score(
+                {"title": "Xiaomi 12GB RAM 256GB ROM Smartphone"},
+                intent,
+                ["هواتف"],
+            )
+        )
+        self.assertIsNone(
+            _post_match_score(
+                {"title": "Xiaomi 8GB RAM 256GB ROM Smartphone"},
+                intent,
+                ["هواتف"],
+            )
+        )
+        self.assertIsNone(
+            _post_match_score(
+                {"title": "UGREEN 6A 100W USB-C Charging Cable for Huawei Phones"},
+                {
+                    "request_type": "category_cheapest",
+                    "category": "phones",
+                    "required_specs": [],
+                },
+                ["هواتف"],
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

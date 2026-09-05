@@ -73,6 +73,7 @@ _CATEGORY_KEYWORDS = {
     "home": {"home", "kitchen", "منزل", "مطبخ", "منزلية"},
 }
 _MAX_USER_REQUEST_CHARS = 6000
+_SUPPORTED_SPEC_TYPES = {"storage", "ram"}
 _GENERIC_REQUEST_WORDS = {
     "أفضل",
     "افضل",
@@ -296,6 +297,129 @@ def _normalize_request_keywords(value):
     return keywords[:6]
 
 
+def _canonical_spec_value(value):
+    match = re.search(
+        r"(\d+(?:[.,]\d+)?)\s*(gb|g|tb|t|جيجا|غيغا|جيجابايت|تيرا)?",
+        str(value or "").casefold(),
+    )
+    if not match:
+        return None
+    number = match.group(1).replace(",", ".")
+    unit = (match.group(2) or "GB").casefold()
+    unit = {
+        "g": "GB",
+        "gb": "GB",
+        "جيجا": "GB",
+        "غيغا": "GB",
+        "جيجابايت": "GB",
+        "t": "TB",
+        "tb": "TB",
+        "تيرا": "TB",
+    }.get(unit, "GB")
+    return f"{number}{unit}"
+
+
+def _normalize_required_specs(value):
+    if not isinstance(value, list):
+        return []
+
+    normalized = []
+    aliases = {
+        "memory": "ram",
+        "random_access_memory": "ram",
+        "ذاكرة عشوائية": "ram",
+        "ذاكرة": "ram",
+        "مساحة": "storage",
+        "capacity": "storage",
+    }
+    for item in value[:8]:
+        if isinstance(item, dict):
+            spec_type = str(
+                item.get("type") or item.get("kind") or ""
+            ).casefold().strip()
+            spec_value = item.get("value")
+        else:
+            raw_item = str(item or "").casefold()
+            if any(term in raw_item for term in ("ram", "رام")):
+                spec_type = "ram"
+            elif any(
+                term in raw_item
+                for term in ("storage", "rom", "تخزين", "ذاكرة داخلية")
+            ):
+                spec_type = "storage"
+            else:
+                continue
+            spec_value = raw_item
+
+        spec_type = aliases.get(spec_type, spec_type)
+        if spec_type not in _SUPPORTED_SPEC_TYPES:
+            continue
+        canonical_value = _canonical_spec_value(spec_value)
+        if not canonical_value:
+            continue
+        spec = {"type": spec_type, "value": canonical_value}
+        if spec not in normalized:
+            normalized.append(spec)
+    return normalized[:6]
+
+
+def _extract_required_specs(text):
+    """Extract explicit RAM/storage requirements as a local safety net."""
+    normalized_text = str(text or "").casefold()
+    normalized_text = normalized_text.translate(
+        str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+    )
+    normalized_text = re.sub(r"\s+", " ", normalized_text)
+    specs = []
+    patterns = (
+        (
+            "ram",
+            r"(?:ram|ذاكرة\s*(?:عشوائية|رام)?|رام)"
+            r"\s*(?:الم?:|:|-)?\s*(\d+(?:[.,]\d+)?)\s*"
+            r"(gb|g|جيجا|غيغا|جيجابايت)?",
+        ),
+        (
+            "storage",
+            r"(?:storage|rom|مساحة\s*التخزين|مساحة\s*تخزين|التخزين|"
+            r"ذاكرة\s*داخلية)"
+            r"\s*(?:الم?:|:|-)?\s*(\d+(?:[.,]\d+)?)\s*"
+            r"(gb|g|tb|t|جيجا|غيغا|جيجابايت|تيرا)?",
+        ),
+    )
+    for spec_type, pattern in patterns:
+        for match in re.finditer(pattern, normalized_text):
+            value = _canonical_spec_value(
+                f"{match.group(1)}{match.group(2) or 'GB'}"
+            )
+            if value:
+                spec = {"type": spec_type, "value": value}
+                if spec not in specs:
+                    specs.append(spec)
+
+    reverse_patterns = (
+        (
+            "ram",
+            r"(\d+(?:[.,]\d+)?)\s*(gb|g|جيجا|غيغا|جيجابايت)?\s*"
+            r"(?:ram|رام|ذاكرة\s*عشوائية)",
+        ),
+        (
+            "storage",
+            r"(\d+(?:[.,]\d+)?)\s*(gb|g|tb|t|جيجا|غيغا|جيجابايت|تيرا)"
+            r"\s*(?:storage|rom|تخزين|ذاكرة\s*داخلية)",
+        ),
+    )
+    for spec_type, pattern in reverse_patterns:
+        for match in re.finditer(pattern, normalized_text):
+            value = _canonical_spec_value(
+                f"{match.group(1)}{match.group(2) or 'GB'}"
+            )
+            if value:
+                spec = {"type": spec_type, "value": value}
+                if spec not in specs:
+                    specs.append(spec)
+    return specs[:6]
+
+
 def _has_specific_product_keyword(keywords):
     return any(
         keyword.casefold() not in {
@@ -328,6 +452,11 @@ def _normalize_user_request_result(result, text):
         request_type = "unsupported"
 
     keywords = _normalize_request_keywords(result.get("keywords"))
+    required_specs = _normalize_required_specs(result.get("required_specs"))
+    for spec in _extract_required_specs(text):
+        if spec not in required_specs:
+            required_specs.append(spec)
+    required_specs = required_specs[:6]
     category = result.get("category")
     if category not in _REQUEST_CATEGORIES:
         category = None
@@ -357,11 +486,13 @@ def _normalize_user_request_result(result, text):
         category = None
         min_price = None
         max_price = None
+        required_specs = []
     elif request_type == "unsupported":
         keywords = []
         category = None
         min_price = None
         max_price = None
+        required_specs = []
 
     return {
         "request_type": request_type,
@@ -369,6 +500,7 @@ def _normalize_user_request_result(result, text):
         "category": category,
         "min_price": min_price,
         "max_price": max_price,
+        "required_specs": required_specs,
     }
 
 
@@ -414,6 +546,7 @@ def parse_user_request(text):
             "category": None,
             "min_price": None,
             "max_price": None,
+            "required_specs": [],
         }
 
     prompt = f"""
@@ -458,7 +591,8 @@ phones, headphones, tablets, laptops, watches, cameras, gaming, home, other
   "keywords": [],
   "category": null,
   "min_price": null,
-  "max_price": null
+  "max_price": null,
+  "required_specs": []
 }}
 
 ضع كلمات البحث بالعربية والإنجليزية عند الحاجة داخل keywords.
@@ -467,6 +601,10 @@ phones, headphones, tablets, laptops, watches, cameras, gaming, home, other
 والصيغ البديلة المحتملة للمنتج داخل keywords. للطلبات عن فئة، category
 مطلوب واستخدم كلمات الفئة فقط. استخرج اسم المنتج من وسط الجملة حتى لو
 سبقه أو لحقه شرح طويل.
+- required_specs يجب أن تحتوي فقط على شروط المواصفات الصريحة من نوع storage
+  أو ram. مثال: [{{"type": "storage", "value": "256GB"}},
+  {{"type": "ram", "value": "12GB"}}]. يجب اعتبار كل المواصفات شروطًا
+  إلزامية معًا، ولا تضع مواصفة لم يذكرها المستخدم.
 لا تنشئ SQL ولا تضف مفاتيح أخرى.
 
 أمثلة:
